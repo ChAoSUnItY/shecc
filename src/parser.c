@@ -388,6 +388,9 @@ int read_preproc_directive()
         } else if (lex_peek(T_string, value)) {
             lex_expect(T_string);
             add_alias(alias, value);
+        } else if (lex_peek(T_identifier, value)) {
+            lex_expect(T_identifier);
+            add_alias(alias, value);
         } else if (lex_accept(T_open_bracket)) { /* function-like macro */
             macro_t *macro = add_macro(alias);
 
@@ -2871,6 +2874,14 @@ void parse_internal()
     type = add_named_type("int");
     type->base_type = TYPE_int;
     type->size = 4;
+
+    /* builtin type _Bool was introduced in C99 specification, it is more
+     * well-known as macro type bool, which is defined in <std_bool.h> (in
+     * shecc, it is defined in 'lib/c.c').
+     */
+    type = add_named_type("_Bool");
+    type->base_type = TYPE_char;
+    type->size = 1;
 
     add_block(NULL, NULL, NULL); /* global block */
     elf_add_symbol("", 0, 0);    /* undef symbol */

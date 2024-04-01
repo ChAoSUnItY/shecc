@@ -519,6 +519,11 @@ token_t lex_token_internal(int aliasing)
             alias = find_alias(token_str);
             if (alias) {
                 token_t t = is_numeric(alias) ? T_numeric : T_string;
+
+                if (!strcmp(alias, "_Bool")) {
+                    t = T_identifier;
+                }
+
                 strcpy(token_str, alias);
                 return t;
             }
