@@ -1,4 +1,4 @@
-CC ?= gcc
+CC ?= ./slimcc
 CFLAGS := -O -g \
 	-std=c99 -pedantic \
 	-Wall -Wextra \
