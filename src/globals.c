@@ -28,8 +28,9 @@ int funcs_idx = 1;
 trie_t *FUNC_TRIES;
 int func_tries_idx = 1;
 
-type_t *TYPES;
+type_t **TYPES;
 int types_idx = 0;
+int types_cap = INITIAL_TYPES_CAP;
 
 ph1_ir_t *GLOBAL_IR;
 int global_ir_idx = 0;
@@ -73,6 +74,14 @@ int elf_data_start;
 char *elf_symtab;
 char *elf_strtab;
 char *elf_section;
+
+/* Built-in types */
+type_t *void_type;
+type_t *char_type;
+type_t *bool_type;
+type_t *int_type;
+
+void error(char *msg);
 
 /**
  * insert_trie() - Inserts a new element into the trie structure.
@@ -148,6 +157,8 @@ int find_trie(trie_t *trie, char *name)
 int dump_ir = 0;
 int hard_mul_div = 0;
 
+// type_t & type_ref_t definitions
+
 /**
  * find_type() - Find the type by the given name.
  * @type_name: The name to be searched.
@@ -156,30 +167,66 @@ int hard_mul_div = 0;
  *      1 - Search in all names, excluding the tags of structure.
  *      2 - Only search in tags.
  *
- * Return: The pointer to the type, or NULL if not found.
+ * @returns: The pointer to the type, or NULL if not found.
  */
 type_t *find_type(char *type_name, int flag)
 {
     for (int i = 0; i < types_idx; i++) {
-        if (TYPES[i].base_type == TYPE_struct) {
+        type_t *type = TYPES[i];
+
+        if (type->base_type == TYPE_struct) {
             if (flag == 1)
                 continue;
-            if (!strcmp(TYPES[i].type_name, type_name))
-                return &TYPES[i];
+            if (!strcmp(type->type_name, type_name))
+                return type;
         } else {
             if (flag == 2)
                 continue;
-            if (!strcmp(TYPES[i].type_name, type_name)) {
+            if (!strcmp(type->type_name, type_name)) {
                 /* If it is a forwardly declared alias of a structure, return
                  * the base structure type.
                  */
-                if (TYPES[i].base_type == TYPE_typedef && TYPES[i].size == 0)
-                    return TYPES[i].base_struct;
-                return &TYPES[i];
+                if (type->base_type == TYPE_typedef && type->size == 0)
+                    return type->base_struct;
+                return type;
             }
         }
     }
     return NULL;
+}
+
+/**
+ * add_type() - Creates an uninitialized type.
+ *
+ * @returns: The pointer to the created type.
+ */
+type_t *add_type()
+{
+    if (types_idx >= types_cap) {
+        types_cap *= 2;
+        type_t **new_types = malloc(types_cap * sizeof(type_t *));
+        for (int i = 0; i < types_idx; i++)
+            new_types[i] = TYPES[i];
+        free(TYPES);
+        TYPES = new_types;
+    }
+
+    type_t *type = malloc(sizeof(type_t));
+    TYPES[types_idx++] = type;
+    return type;
+}
+
+/**
+ * add_named_type() - Creates a named type.
+ * @name: The name of type, must not have '*' (asterisk) in the name.
+ *
+ * @returns: The pointer to the named type.
+ */
+type_t *add_named_type(char *name)
+{
+    type_t *type = add_type();
+    strcpy(type->type_name, name);
+    return type;
 }
 
 ph1_ir_t *add_global_ir(opcode_t op)
@@ -301,7 +348,6 @@ bool remove_macro(char *name)
     return false;
 }
 
-void error(char *msg);
 int find_macro_param_src_idx(char *name, block_t *parent)
 {
     macro_t *macro = parent->macro;
@@ -329,18 +375,6 @@ func_t *add_func(char *name)
     fn = &FUNCS[index];
     fn->stack_size = 4; /* starting point of stack */
     return fn;
-}
-
-type_t *add_type()
-{
-    return &TYPES[types_idx++];
-}
-
-type_t *add_named_type(char *name)
-{
-    type_t *type = add_type();
-    strcpy(type->type_name, name);
-    return type;
 }
 
 void add_constant(char alias[], int value)
@@ -424,10 +458,17 @@ var_t *find_var(char *token, block_t *parent)
 int size_var(var_t *var)
 {
     int size;
+    // type_ref_t *type_ref = var->type_ref;
+
+    // if (ptr_levels(type_ref)) {
+    //     size = 4;
+    // } else {
+
+    // }
     if (var->is_ptr > 0 || var->is_func) {
         size = 4;
     } else {
-        type_t *type = find_type(var->type_name, 0);
+        type_t *type = var->type;
         if (!type)
             error("Incomplete type");
         if (type->size == 0)
@@ -602,7 +643,7 @@ void global_init()
     MACROS = malloc(MAX_ALIASES * sizeof(macro_t));
     FUNCS = malloc(MAX_FUNCS * sizeof(func_t));
     FUNC_TRIES = malloc(MAX_FUNC_TRIES * sizeof(trie_t));
-    TYPES = malloc(MAX_TYPES * sizeof(type_t));
+    TYPES = malloc(types_cap * sizeof(type_t *));
     GLOBAL_IR = malloc(MAX_GLOBAL_IR * sizeof(ph1_ir_t));
     PH1_IR = malloc(MAX_IR_INSTR * sizeof(ph1_ir_t));
     PH2_IR = malloc(MAX_IR_INSTR * sizeof(ph2_ir_t));
@@ -632,6 +673,8 @@ void global_release()
     free(MACROS);
     free(FUNCS);
     free(FUNC_TRIES);
+    for (int i = 0; i < types_idx; i++)
+        free(TYPES[i]);
     free(TYPES);
     free(GLOBAL_IR);
     free(PH1_IR);
@@ -705,25 +748,28 @@ void dump_ph1_ir()
             strcpy(op2, ph1_ir->src1->var_name);
 
         switch (ph1_ir->op) {
-        case OP_define:
+        case OP_define: {
             fn = find_func(ph1_ir->func_name);
-            printf("def %s", fn->return_def.type_name);
+            var_t *return_def = &fn->return_def;
+            printf("def %s", return_def->type->type_name);
 
             for (int j = 0; j < fn->return_def.is_ptr; j++)
                 printf("*");
             printf(" @%s(", ph1_ir->func_name);
 
             for (int j = 0; j < fn->num_params; j++) {
+                var_t *param = &fn->param_defs[j];
                 if (j != 0)
                     printf(", ");
-                printf("%s", fn->param_defs[j].type_name);
+                printf("%s", param->type->type_name);
 
                 for (int k = 0; k < fn->param_defs[j].is_ptr; k++)
                     printf("*");
-                printf(" %%%s", fn->param_defs[j].var_name);
+                printf(" %%%s", param->var_name);
             }
             printf(")");
             break;
+        }
         case OP_block_start:
             print_indent(indent);
             printf("{");
@@ -736,7 +782,7 @@ void dump_ph1_ir()
             break;
         case OP_allocat:
             print_indent(indent);
-            printf("allocat %s", ph1_ir->src0->type_name);
+            printf("allocat %s", ph1_ir->src0->type->type_name);
             for (int j = 0; j < ph1_ir->src0->is_ptr; j++)
                 printf("*");
             printf(" %%%s", op1);

@@ -574,15 +574,19 @@ void read_inner_var_decl(var_t *vd, int anon, int is_param)
 /* starting next_token, need to check the type */
 void read_full_var_decl(var_t *vd, int anon, int is_param)
 {
-    lex_accept(T_struct); /* ignore struct definition */
-    lex_ident(T_identifier, vd->type_name);
+    int is_tag = lex_accept(T_struct) ? 2 : 1;
+    char type_name[MAX_TYPE_LEN];
+    lex_ident(T_identifier, type_name);
+    type_t *type = find_type(type_name, is_tag);
+    vd->type = type;
+    
     read_inner_var_decl(vd, anon, is_param);
 }
 
 /* starting next_token, need to check the type */
 void read_partial_var_decl(var_t *vd, var_t *template)
 {
-    strcpy(vd->type_name, template->type_name);
+    vd->type = template->type;
     read_inner_var_decl(vd, 0, 0);
 }
 
@@ -1245,7 +1249,7 @@ void read_lvalue(lvalue_t *lvalue,
     /* already peeked and have the variable */
     lex_expect(T_identifier);
 
-    lvalue->type = find_type(var->type_name, 0);
+    lvalue->type = var->type;
     lvalue->size = get_size(var, lvalue->type);
     lvalue->is_ptr = var->is_ptr;
     lvalue->is_func = var->is_func;
@@ -1345,7 +1349,7 @@ void read_lvalue(lvalue_t *lvalue,
 
             /* change type currently pointed to */
             var = find_member(token, lvalue->type);
-            lvalue->type = find_type(var->type_name, 0);
+            lvalue->type = var->type;
             lvalue->is_ptr = var->is_ptr;
             lvalue->is_func = var->is_func;
             lvalue->size = get_size(var, lvalue->type);
@@ -3208,6 +3212,7 @@ void read_global_statement()
         type_t *type = find_type(token, 2);
         if (!type)
             type = add_type();
+        type->base_type = TYPE_struct;
 
         strcpy(type->type_name, token);
         lex_expect(T_open_curly);
@@ -3221,7 +3226,6 @@ void read_global_statement()
 
         type->size = size;
         type->num_fields = i;
-        type->base_type = TYPE_struct;
         lex_expect(T_semicolon);
     } else if (lex_accept(T_typedef)) {
         if (lex_accept(T_enum)) {
@@ -3315,25 +3319,25 @@ void read_global_statement()
 void parse_internal()
 {
     /* built-in types */
-    type_t *type = add_named_type("void");
-    type->base_type = TYPE_void;
-    type->size = 0;
+    void_type = add_named_type("void");
+    void_type->base_type = TYPE_void;
+    void_type->size = 0;
 
-    type = add_named_type("char");
-    type->base_type = TYPE_char;
-    type->size = 1;
-
-    type = add_named_type("int");
-    type->base_type = TYPE_int;
-    type->size = 4;
+    char_type = add_named_type("char");
+    char_type->base_type = TYPE_char;
+    char_type->size = 1;
 
     /* builtin type _Bool was introduced in C99 specification, it is more
      * well-known as macro type bool, which is defined in <std_bool.h> (in
      * shecc, it is defined in 'lib/c.c').
      */
-    type = add_named_type("_Bool");
-    type->base_type = TYPE_char;
-    type->size = 1;
+    bool_type = add_named_type("_Bool");
+    bool_type->base_type = TYPE_char;
+    bool_type->size = 1;
+
+    int_type = add_named_type("int");
+    int_type->base_type = TYPE_int;
+    int_type->size = 4;
 
     add_block(NULL, NULL, NULL); /* global block */
     elf_add_symbol("", 0, 0);    /* undef symbol */

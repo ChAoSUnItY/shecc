@@ -253,9 +253,9 @@ void reg_alloc()
                     GLOBAL_FUNC.stack_size +=
                         align_size(PTR_SIZE * global_insn->rd->array_size);
                 else {
-                    type_t *type = find_type(global_insn->rd->type_name, 0);
                     GLOBAL_FUNC.stack_size +=
-                        align_size(global_insn->rd->array_size * type->size);
+                        align_size(global_insn->rd->array_size *
+                                   global_insn->rd->type->size);
                 }
 
                 dest =
@@ -265,13 +265,13 @@ void reg_alloc()
                 ir->dest = dest;
                 spill_var(GLOBAL_FUNC.fn->bbs, global_insn->rd, dest);
             } else {
+                type_t *type = global_insn->rd->type;
                 global_insn->rd->offset = GLOBAL_FUNC.stack_size;
                 if (global_insn->rd->is_ptr)
                     GLOBAL_FUNC.stack_size += PTR_SIZE;
-                else if (strcmp(global_insn->rd->type_name, "int") &&
-                         strcmp(global_insn->rd->type_name, "char") &&
-                         strcmp(global_insn->rd->type_name, "_Bool")) {
-                    type_t *type = find_type(global_insn->rd->type_name, 0);
+                else if (strcmp(type->type_name, "int") &&
+                         strcmp(type->type_name, "char") &&
+                         strcmp(type->type_name, "_Bool")) {
                     GLOBAL_FUNC.stack_size += align_size(type->size);
                 } else
                     /* 'char' is aligned to one byte for the convenience */
@@ -357,11 +357,12 @@ void reg_alloc()
                     ir->src0 = src0;
                     ir->src1 = insn->rd->offset;
                     break;
-                case OP_allocat:
-                    if ((!strcmp(insn->rd->type_name, "void") ||
-                         !strcmp(insn->rd->type_name, "int") ||
-                         !strcmp(insn->rd->type_name, "char") ||
-                         !strcmp(insn->rd->type_name, "_Bool")) &&
+                case OP_allocat: {
+                    type_t *type = insn->rd->type;
+                    if ((!strcmp(type->type_name, "void") ||
+                         !strcmp(type->type_name, "int") ||
+                         !strcmp(type->type_name, "char") ||
+                         !strcmp(type->type_name, "_Bool")) &&
                         insn->rd->array_size == 0)
                         break;
 
@@ -372,7 +373,6 @@ void reg_alloc()
                     if (insn->rd->is_ptr)
                         sz = PTR_SIZE;
                     else {
-                        type_t *type = find_type(insn->rd->type_name, 0);
                         sz = type->size;
                     }
 
@@ -387,6 +387,7 @@ void reg_alloc()
                     ir->src0 = src0;
                     ir->dest = dest;
                     break;
+                }
                 case OP_load_constant:
                 case OP_load_data_address:
                     if (insn->rd->consumed == -1)
@@ -621,10 +622,11 @@ void reg_alloc()
         /* handle implicit return */
         for (int i = 0; i < MAX_BB_PRED; i++) {
             basic_block_t *bb = fn->exit->prev[i].bb;
+            type_t *type = fn->func->return_def.type;
             if (!bb)
                 continue;
 
-            if (strcmp(fn->func->return_def.type_name, "void"))
+            if (strcmp(type->type_name, "void"))
                 continue;
 
             if (bb->insn_list.tail)

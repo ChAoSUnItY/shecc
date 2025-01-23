@@ -21,7 +21,7 @@
 #define MAX_FIELDS 64
 #define MAX_FUNCS 512
 #define MAX_FUNC_TRIES 2160
-#define MAX_TYPES 64
+#define INITIAL_TYPES_CAP 16
 #define MAX_IR_INSTR 50000
 #define MAX_BB_PRED 128
 #define MAX_BB_DOM_SUCC 64
@@ -69,7 +69,9 @@ typedef enum {
     TYPE_int,
     TYPE_char,
     TYPE_struct,
-    TYPE_typedef
+    TYPE_typedef,
+    TYPE_fixed_size_array,
+    TYPE_func
 } base_type_t;
 
 /* IR opcode */
@@ -167,8 +169,10 @@ typedef struct use_chain_node {
     struct use_chain_node *prev;
 } use_chain_t;
 
+typedef struct type type_t;
+
 struct var {
-    char type_name[MAX_TYPE_LEN];
+    type_t *type;
     char var_name[MAX_VAR_LEN];
     int is_ptr;
     bool is_func;
@@ -275,13 +279,13 @@ typedef struct ph2_ir ph2_ir_t;
 struct type {
     char type_name[MAX_TYPE_LEN];
     base_type_t base_type;
-    struct type *base_struct;
     int size;
+    /* struct type members */
     var_t fields[MAX_FIELDS];
     int num_fields;
+    /* typedef members */
+    struct type *base_struct;
 };
-
-typedef struct type type_t;
 
 /* lvalue details */
 typedef struct {
