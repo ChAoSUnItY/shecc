@@ -212,6 +212,7 @@ type_t *add_type()
     }
 
     type_t *type = malloc(sizeof(type_t));
+    type->type_index = types_idx;
     TYPES[types_idx++] = type;
     return type;
 }
@@ -228,6 +229,89 @@ type_t *add_named_type(char *name)
     strcpy(type->type_name, name);
     return type;
 }
+
+/**
+ * type_as_type_ref() - Converts type_t to type_ref_t.
+ * @type: The base type. Must not be NULL.
+ * @ptr_level: The pointer level of the converted type. The value must
+ * be within 0 and 256.
+ *
+ * @returns: The converted type_ref_t.
+ */
+type_ref_t type_as_type_ref(type_t *type, int ptr_level)
+{
+    if (ptr_level < 0 || ptr_level > 255)
+        error("ICE: ptr_level cannot be less than 0 or greater than 255");
+
+    return type->type_index | (ptr_level << 16);
+}
+
+type_t *type_ref_as_type(type_ref_t ref)
+{
+    return TYPES[TYPE_INDEX(ref)];
+}
+
+type_ref_t type_ref_adjust_ref(type_ref_t ref, int ptr_level)
+{
+    int new_ptr_level = PTR_LEVEL(ref) + ptr_level;
+
+    if (new_ptr_level < 0 || new_ptr_level > 255)
+        error("ICE: adjusted ptr_level cannot be less than 0 or greater than 255");
+
+    return (ref & 0xFF00FFFF) | (new_ptr_level << 16);
+}
+
+type_ref_t type_ref_reference(type_ref_t ref)
+{
+    int ptr_level = PTR_LEVEL(ref);
+
+    if (ptr_level == 0xFF)
+        error("ICE: ptr_level cannot exceed 255");
+
+    return (ref & 0xFF00FFFF) | ((ptr_level + 1) << 16);
+}
+
+type_ref_t type_ref_dereference(type_ref_t ref)
+{
+    int ptr_level = PTR_LEVEL(ref);
+
+    if (!ptr_level)
+        error("ICE: ptr_level cannot be negative");
+
+    return (ref & 0xFF00FFFF) | ((ptr_level - 1) << 16);
+}
+
+int type_ref_get_size(type_ref_t ref)
+{
+    int ptr_level = PTR_LEVEL(ref);
+
+    if (ptr_level)
+        return PTR_SIZE;
+
+    type_t *type = type_ref_as_type(ref);
+
+    if (!type)
+        error("Incomplete type");
+
+    if (type->size == 0)
+        return type->base_struct->size;
+
+    return type->size;
+}
+
+void type_ref_get_name(type_ref_t ref, char *buf)
+{
+    type_t *type = type_ref_as_type(ref);
+    int len = strlen(type->type_name), ptr_cnt = PTR_LEVEL(ref);
+
+    strcpy(buf, type->type_name);
+    
+    for (int i = 0; i < ptr_cnt; i++)
+        buf[len++] = '*';
+
+    buf[len] = '\0';
+}
+
 
 ph1_ir_t *add_global_ir(opcode_t op)
 {
@@ -457,18 +541,13 @@ var_t *find_var(char *token, block_t *parent)
 
 int size_var(var_t *var)
 {
-    int size;
-    // type_ref_t *type_ref = var->type_ref;
+    type_ref_t ref = var->type_ref;
+    int ptr_level = PTR_LEVEL(var->type_ref), size;
 
-    // if (ptr_levels(type_ref)) {
-    //     size = 4;
-    // } else {
-
-    // }
-    if (var->is_ptr > 0 || var->is_func) {
+    if (ptr_level || var->is_func) {
         size = 4;
     } else {
-        type_t *type = var->type;
+        type_t *type = type_ref_as_type(ref);
         if (!type)
             error("Incomplete type");
         if (type->size == 0)

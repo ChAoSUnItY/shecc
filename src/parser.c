@@ -59,10 +59,15 @@ int write_symbol(char *data, int len)
     return startLen;
 }
 
-int get_size(var_t *var, type_t *type)
+int get_size(var_t *var, type_ref_t ref)
 {
-    if (var->is_ptr || var->is_func)
+    int ptr_level = PTR_LEVEL(ref);
+
+    if (ptr_level || var->is_func)
         return PTR_SIZE;
+
+    type_t *type = type_ref_as_type(ref);
+
     return type->size;
 }
 
@@ -521,11 +526,17 @@ void read_parameter_list_decl(func_t *fd, int anon);
 
 void read_inner_var_decl(var_t *vd, int anon, int is_param)
 {
+    int ptr_level = 0;
     vd->init_val = 0;
     vd->is_ptr = 0;
 
-    while (lex_accept(T_asterisk))
+    while (lex_accept(T_asterisk)) {
+        ptr_level++;
+        vd->type_ref = type_ref_reference(vd->type_ref);
         vd->is_ptr++;
+    }
+
+    vd->type_ref = type_ref_adjust_ref(vd->type_ref, ptr_level);
 
     /* is it function pointer declaration? */
     if (lex_accept(T_open_bracket)) {
@@ -555,12 +566,15 @@ void read_inner_var_decl(var_t *vd, int anon, int is_param)
 
             /* array with size */
             if (lex_peek(T_numeric, buffer)) {
+                type_t *array_type = add_type();
                 vd->array_size = read_numeric_constant(buffer);
+                vd->array_size
                 lex_expect(T_numeric);
             } else {
                 /* array without size:
                  * regarded as a pointer although could be nested
                  */
+                vd->type_ref = type_ref_reference(vd->type_ref);
                 vd->is_ptr++;
             }
             lex_expect(T_close_square);
@@ -578,6 +592,7 @@ void read_full_var_decl(var_t *vd, int anon, int is_param)
     char type_name[MAX_TYPE_LEN];
     lex_ident(T_identifier, type_name);
     type_t *type = find_type(type_name, is_tag);
+    vd->type_ref = type_as_type_ref(type, 0);
     vd->type = type;
     
     read_inner_var_decl(vd, anon, is_param);
@@ -586,6 +601,7 @@ void read_full_var_decl(var_t *vd, int anon, int is_param)
 /* starting next_token, need to check the type */
 void read_partial_var_decl(var_t *vd, var_t *template)
 {
+    vd->type_ref = template->type_ref;
     vd->type = template->type;
     read_inner_var_decl(vd, 0, 0);
 }
@@ -1250,7 +1266,8 @@ void read_lvalue(lvalue_t *lvalue,
     lex_expect(T_identifier);
 
     lvalue->type = var->type;
-    lvalue->size = get_size(var, lvalue->type);
+    lvalue->type_ref = var->type_ref;
+    lvalue->size = get_size(var, lvalue->type_ref);
     lvalue->is_ptr = var->is_ptr;
     lvalue->is_func = var->is_func;
     lvalue->is_reference = false;
@@ -1350,9 +1367,10 @@ void read_lvalue(lvalue_t *lvalue,
             /* change type currently pointed to */
             var = find_member(token, lvalue->type);
             lvalue->type = var->type;
+            lvalue->type_ref = var->type_ref;
             lvalue->is_ptr = var->is_ptr;
             lvalue->is_func = var->is_func;
-            lvalue->size = get_size(var, lvalue->type);
+            lvalue->size = get_size(var, lvalue->type_ref);
 
             /* if it is an array, get the address of first element instead of
              * its value.

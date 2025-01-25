@@ -20,7 +20,7 @@
 #define MAX_LOCALS 1500
 #define MAX_FIELDS 64
 #define MAX_FUNCS 512
-#define MAX_FUNC_TRIES 2160
+#define MAX_FUNC_TRIES 3000
 #define INITIAL_TYPES_CAP 16
 #define MAX_IR_INSTR 50000
 #define MAX_BB_PRED 128
@@ -62,6 +62,10 @@
 /* configure host data model when using 'memcpy'. */
 #define HOST_PTR_SIZE __SIZEOF_POINTER__
 #endif
+
+/* type_ref_t bitmask macros */
+#define PTR_LEVEL(x) ((x >> 16) & 0xFF)
+#define TYPE_INDEX(x) (x & 0xFFFF)
 
 /* builtin types */
 typedef enum {
@@ -169,9 +173,12 @@ typedef struct use_chain_node {
     struct use_chain_node *prev;
 } use_chain_t;
 
+typedef int type_ref_t;
+
 typedef struct type type_t;
 
 struct var {
+    type_ref_t type_ref;
     type_t *type;
     char var_name[MAX_VAR_LEN];
     int is_ptr;
@@ -279,12 +286,16 @@ typedef struct ph2_ir ph2_ir_t;
 struct type {
     char type_name[MAX_TYPE_LEN];
     base_type_t base_type;
+    int type_index;
     int size;
     /* struct type members */
     var_t fields[MAX_FIELDS];
     int num_fields;
     /* typedef members */
     struct type *base_struct;
+    /* fixed-size array */
+    int array_size;
+    type_ref_t element_type_ref;
 };
 
 /* lvalue details */
@@ -293,6 +304,7 @@ typedef struct {
     int is_ptr;
     bool is_func;
     bool is_reference;
+    type_ref_t type_ref;
     type_t *type;
 } lvalue_t;
 
