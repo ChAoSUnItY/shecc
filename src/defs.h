@@ -19,7 +19,7 @@
 #define MAX_PARAMS 8
 #define MAX_LOCALS 1500
 #define MAX_FIELDS 64
-#define MAX_FUNCS 512
+#define MAX_FUNCS 64
 #define MAX_TYPES 64
 #define MAX_IR_INSTR 50000
 #define MAX_BB_PRED 128
@@ -34,7 +34,7 @@
 #define MAX_STRTAB 65536
 #define MAX_HEADER 1024
 #define MAX_SECTION 1024
-#define MAX_ALIASES 1024
+#define MAX_ALIASES 128
 #define MAX_CONSTANTS 1024
 #define MAX_CASES 128
 #define MAX_NESTING 128
@@ -77,6 +77,20 @@ typedef struct arena_block {
 typedef struct {
     arena_block_t *head;
 } arena_t;
+
+/* string-based hash map definitions */
+
+typedef struct hashmap_node {
+    char *key;
+    void *val;
+    struct hashmap_node *next;
+} hashmap_node_t;
+
+typedef struct {
+    int size;
+    int cap;
+    hashmap_node_t **buckets;
+} hashmap_t;
 
 /* builtin types */
 typedef enum {
@@ -319,19 +333,6 @@ typedef struct {
     char alias[MAX_VAR_LEN];
     int value;
 } constant_t;
-
-/* string-based hash map definitions */
-
-typedef struct hashmap_node {
-    char *key;
-    void *val;
-    struct hashmap_node *next;
-} hashmap_node_t;
-
-typedef struct {
-    int size;
-    hashmap_node_t **buckets;
-} hashmap_t;
 
 struct phi_operand {
     var_t *var;

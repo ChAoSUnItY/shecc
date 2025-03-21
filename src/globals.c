@@ -12,8 +12,7 @@
 
 block_list_t BLOCKS;
 
-macro_t *MACROS;
-int macros_idx = 0;
+hashmap_t *MACROS;
 
 /* FUNCS_MAP is used to integrate function storing and boost lookup
  * performance, currently it uses FNV-1a hash function to hash function
@@ -50,8 +49,7 @@ int elf_offset = 0;
 
 regfile_t REGS[REG_CNT];
 
-alias_t *ALIASES;
-int aliases_idx = 0;
+hashmap_t *ALIASES;
 
 constant_t *CONSTANTS;
 int constants_idx = 0;
@@ -232,26 +230,24 @@ int round_up_pow2(int v)
  *
  * Return: The pointer of created hashmap.
  */
-hashmap_t *hashmap_create(int size)
+hashmap_t *hashmap_create(int cap)
 {
     hashmap_t *map = malloc(sizeof(hashmap_t));
 
     if (!map) {
-        printf("Failed to allocate hashmap_t with size %d\n", size);
+        printf("Failed to allocate hashmap_t with size %d\n", cap);
         return NULL;
     }
 
-    map->size = round_up_pow2(size);
-    map->buckets = malloc(map->size * sizeof(hashmap_node_t *));
+    map->size = 0;
+    map->cap = round_up_pow2(cap);
+    map->buckets = calloc(map->cap, sizeof(hashmap_node_t *));
 
     if (!map->buckets) {
         printf("Failed to allocate buckets in hashmap_t\n");
         free(map);
         return NULL;
     }
-
-    for (int i = 0; i < map->size; i++)
-        map->buckets[i] = 0;
 
     return map;
 }
@@ -291,6 +287,47 @@ hashmap_node_t *hashmap_node_new(char *key, void *val)
     return node;
 }
 
+void hashmap_rehash(hashmap_t *map)
+{
+    if (!map)
+        return;
+
+    int old_cap = map->cap;
+    hashmap_node_t **old_buckets = map->buckets;
+
+    map->cap *= 2;
+    map->buckets = calloc(map->cap, sizeof(hashmap_node_t *));
+
+    if (!map->buckets) {
+        printf("Failed to allocate new buckets in hashmap_t\n");
+        map->buckets = old_buckets;
+        map->cap = old_cap;
+        return;
+    }
+
+    for (int i = 0; i < old_cap; i++) {
+        hashmap_node_t *cur = old_buckets[i], *next, *target_cur;
+
+        while (cur) {
+            next = cur->next;
+            cur->next = NULL;
+            int index = hashmap_hash_index(map->cap, cur->key);
+            target_cur = map->buckets[index];
+
+            if (!target_cur) {
+                map->buckets[index] = cur;
+            } else {
+                cur->next = target_cur;
+                map->buckets[index] = cur;
+            }
+
+            cur = next;
+        }
+    }
+
+    free(old_buckets);
+}
+
 /**
  * hashmap_put() - puts a key-value pair into given hashmap.
  * If key already contains a value, then replace it with new
@@ -305,18 +342,20 @@ void hashmap_put(hashmap_t *map, char *key, void *val)
     if (!map)
         return;
 
-    int index = hashmap_hash_index(map->size, key);
-    hashmap_node_t *cur = map->buckets[index];
+    int index = hashmap_hash_index(map->cap, key);
+    hashmap_node_t *cur = map->buckets[index],
+                   *new_node = hashmap_node_new(key, val);
 
     if (!cur) {
-        map->buckets[index] = hashmap_node_new(key, val);
+        map->buckets[index] = new_node;
     } else {
-        while (cur->next)
-            cur = cur->next;
-        cur->next = hashmap_node_new(key, val);
+        new_node->next = cur;
+        map->buckets[index] = new_node;
     }
 
-    /* TODO: Rehash if size exceeds size * load factor */
+    map->size++;
+    if ((map->cap >> 2) * 3 <= map->size)
+        hashmap_rehash(map);
 }
 
 /**
@@ -332,7 +371,7 @@ void *hashmap_get(hashmap_t *map, char *key)
     if (!map)
         return NULL;
 
-    int index = hashmap_hash_index(map->size, key);
+    int index = hashmap_hash_index(map->cap, key);
 
     for (hashmap_node_t *cur = map->buckets[index]; cur; cur = cur->next)
         if (!strcmp(cur->key, key))
@@ -489,58 +528,88 @@ block_t *add_block(block_t *parent, func_t *func, macro_t *macro)
 
 void add_alias(char *alias, char *value)
 {
-    alias_t *al = &ALIASES[aliases_idx++];
-    strcpy(al->alias, alias);
-    strcpy(al->value, value);
-    al->disabled = false;
+    alias_t *al = hashmap_get(ALIASES, alias);
+
+    if (al) {
+        strcpy(al->value, value);
+        al->disabled = false;
+    } else {
+        al = malloc(sizeof(alias_t));
+
+        if (!al) {
+            printf("Failed to allocate alias_t\n");
+            return;
+        }
+
+        strcpy(al->alias, alias);
+        strcpy(al->value, value);
+        al->disabled = false;
+        hashmap_put(ALIASES, alias, al);
+    }
 }
 
-char *find_alias(char alias[])
+char *find_alias(char *alias)
 {
-    for (int i = 0; i < aliases_idx; i++) {
-        if (!ALIASES[i].disabled && !strcmp(alias, ALIASES[i].alias))
-            return ALIASES[i].value;
-    }
-    return NULL;
+    alias_t *al = hashmap_get(ALIASES, alias);
+
+    if (!al || al->disabled)
+        return NULL;
+
+    return al->value;
 }
 
 bool remove_alias(char *alias)
 {
-    for (int i = 0; i < aliases_idx; i++) {
-        if (!ALIASES[i].disabled && !strcmp(alias, ALIASES[i].alias)) {
-            ALIASES[i].disabled = true;
-            return true;
-        }
-    }
-    return false;
+    alias_t *al = hashmap_get(ALIASES, alias);
+
+    if (!al || al->disabled)
+        return false;
+
+    al->disabled = true;
+    return true;
 }
 
 macro_t *add_macro(char *name)
 {
-    macro_t *ma = &MACROS[macros_idx++];
-    strcpy(ma->name, name);
-    ma->disabled = false;
+    macro_t *ma = hashmap_get(MACROS, name);
+
+    if (ma) {
+        ma->disabled = false;
+    } else {
+        ma = malloc(sizeof(macro_t));
+
+        if (!ma) {
+            printf("Failed to allocate macro_t\n");
+            return ma;
+        }
+
+        strcpy(ma->name, name);
+        ma->disabled = false;
+        hashmap_put(MACROS, name, ma);
+    }
+
     return ma;
 }
 
 macro_t *find_macro(char *name)
 {
-    for (int i = 0; i < macros_idx; i++) {
-        if (!MACROS[i].disabled && !strcmp(name, MACROS[i].name))
-            return &MACROS[i];
-    }
-    return NULL;
+    macro_t *ma = hashmap_get(MACROS, name);
+
+    if (!ma || ma->disabled)
+        return NULL;
+
+    return ma;
 }
 
 bool remove_macro(char *name)
 {
-    for (int i = 0; i < macros_idx; i++) {
-        if (!MACROS[i].disabled && !strcmp(name, MACROS[i].name)) {
-            MACROS[i].disabled = true;
-            return true;
-        }
-    }
-    return false;
+    macro_t *ma = hashmap_get(MACROS, name);
+
+    if (!ma || ma->disabled)
+        return false;
+
+    ma->disabled = true;
+    return true;
 }
 
 void error(char *msg);
@@ -846,7 +915,7 @@ void global_init()
 
     BLOCKS.head = NULL;
     BLOCKS.tail = NULL;
-    MACROS = malloc(MAX_ALIASES * sizeof(macro_t));
+    MACROS = hashmap_create(MAX_ALIASES);
     FUNCS_MAP = hashmap_create(MAX_FUNCS);
     TYPES = malloc(MAX_TYPES * sizeof(type_t));
     GLOBAL_IR = malloc(MAX_GLOBAL_IR * sizeof(ph1_ir_t));
@@ -856,7 +925,7 @@ void global_init()
     PH2_IR_FLATTEN = malloc(MAX_IR_INSTR * sizeof(ph2_ir_t *));
     LABEL_LUT = malloc(MAX_LABEL * sizeof(label_lut_t));
     SOURCE = malloc(MAX_SOURCE);
-    ALIASES = malloc(MAX_ALIASES * sizeof(alias_t));
+    ALIASES = hashmap_create(MAX_ALIASES);
     CONSTANTS = malloc(MAX_CONSTANTS * sizeof(constant_t));
 
     elf_code = malloc(MAX_CODE);
@@ -878,7 +947,7 @@ void global_release()
         free(BLOCKS.head);
         BLOCKS.head = next;
     }
-    free(MACROS);
+    hashmap_free(MACROS);
     hashmap_free(FUNCS_MAP);
     free(TYPES);
     free(GLOBAL_IR);
@@ -888,7 +957,7 @@ void global_release()
     free(PH2_IR_FLATTEN);
     free(LABEL_LUT);
     free(SOURCE);
-    free(ALIASES);
+    hashmap_free(ALIASES);
     free(CONSTANTS);
 
     free(elf_code);

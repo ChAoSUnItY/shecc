@@ -2,6 +2,7 @@ CC ?= gcc
 CFLAGS := -O -g \
 	-std=c99 -pedantic \
 	-fwrapv \
+	-finstrument-functions \
 	-Wall -Wextra \
 	-Wno-unused-but-set-variable \
 	-Wno-variadic-macros \
