@@ -23,10 +23,19 @@
 #include "elf.c"
 
 /* C language lexical analyzer */
-#include "lexer.c"
+#include "lexer_c.c"
 
 /* C language syntactic analyzer */
-#include "parser.c"
+#include "parser_c.c"
+
+/* QBE SIL arena allocator */
+#include "arena_qbesil.c"
+
+/* QBE SIL lexical analyzer */
+#include "lexer_qbesil.c"
+
+/* QBE SIL syntactic analyzer */
+#include "parser_qbesil.c"
 
 /* architecture-independent middle-end */
 #include "ssa.c"
@@ -45,6 +54,7 @@
 
 int main(int argc, char *argv[])
 {
+    int qbesil = 0;
     int libc = 1;
     char *out = NULL, *in = NULL;
 
@@ -62,6 +72,8 @@ int main(int argc, char *argv[])
             } else
                 /* unsupported options */
                 abort();
+        } else if (!strcmp(argv[i], "-xqbesil")) {
+            qbesil = 1;
         } else
             in = argv[i];
     }
@@ -69,13 +81,18 @@ int main(int argc, char *argv[])
     if (!in) {
         printf("Missing source file!\n");
         printf(
-            "Usage: shecc [-o output] [+m] [--dump-ir] [--no-libc] "
+            "Usage: shecc [-o output] [+m] [--dump-ir] [--no-libc] [-xqbesil] "
             "<input.c>\n");
         return -1;
     }
 
     /* initialize global objects */
     global_init();
+
+    if (qbesil) {
+        qs_parse(in);
+        exit(0);
+    }
 
     /* include libc */
     if (libc)
