@@ -3338,47 +3338,6 @@ void read_global_statement()
 
 void parse_internal()
 {
-    /* set starting point of global stack manually */
-    GLOBAL_FUNC = add_func("", true);
-    GLOBAL_FUNC->stack_size = 4;
-    GLOBAL_FUNC->bbs = arena_alloc(BB_ARENA, sizeof(basic_block_t));
-
-    /* built-in types */
-    type_t *type = add_named_type("void");
-    type->base_type = TYPE_void;
-    type->size = 0;
-
-    type = add_named_type("char");
-    type->base_type = TYPE_char;
-    type->size = 1;
-
-    type = add_named_type("int");
-    type->base_type = TYPE_int;
-    type->size = 4;
-
-    /* builtin type _Bool was introduced in C99 specification, it is more
-     * well-known as macro type bool, which is defined in <std_bool.h> (in
-     * shecc, it is defined in 'lib/c.c').
-     */
-    type = add_named_type("_Bool");
-    type->base_type = TYPE_char;
-    type->size = 1;
-
-    add_block(NULL, NULL, NULL); /* global block */
-    elf_add_symbol("", 0, 0);    /* undef symbol */
-
-    /* architecture defines */
-    add_alias(ARCH_PREDEFINED, "1");
-
-    /* shecc run-time defines */
-    add_alias("__SHECC__", "1");
-
-    /* Linux syscall */
-    func_t *func = add_func("__syscall", true);
-    func->num_params = 0;
-    func->va_args = 1;
-    func->bbs = arena_alloc(BB_ARENA, sizeof(basic_block_t));
-
     /* lexer initialization */
     SOURCE->size = 0;
     next_char = SOURCE->elements[0];
@@ -3432,6 +3391,7 @@ void load_source_file(char *file)
 
 void parse(char *file)
 {
-    load_source_file(file);
+    if (!custom_gen)
+        load_source_file(file);
     parse_internal();
 }

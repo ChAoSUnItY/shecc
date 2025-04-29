@@ -451,8 +451,9 @@ void hashmap_free(hashmap_t *map)
 
 /* options */
 
-int dump_ir = 0;
-int hard_mul_div = 0;
+bool dump_ir = false;
+bool hard_mul_div = false;
+bool custom_gen = false;
 
 /**
  * find_type() - Find the type by the given name.
