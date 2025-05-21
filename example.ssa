@@ -1,0 +1,8 @@
+data $data = { b "Hello World!" }
+
+function w $main() {
+  %t =w add $data, 1
+  storeb %t, 97
+  call $__syscall(w 4, w 1, w $data, w 12)
+  ret 0
+}

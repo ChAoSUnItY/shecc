@@ -28,6 +28,18 @@
 /* C language syntactic analyzer */
 #include "parser.c"
 
+/* QBE SIL arena allocator */
+#include "arena_qbesil.c"
+
+/* QBE SIL lexical analyzer */
+#include "lexer_qbesil.c"
+
+/* QBE SIL syntactic analyzer */
+#include "parser_qbesil.c"
+
+/* QBE SIL IR translator */
+#include "ir_translator.c"
+
 /* architecture-independent middle-end */
 #include "ssa.c"
 
@@ -45,6 +57,7 @@
 
 int main(int argc, char *argv[])
 {
+    int qbesil = 0;
     int libc = 1;
     char *out = NULL, *in = NULL;
 
@@ -62,6 +75,8 @@ int main(int argc, char *argv[])
             } else
                 /* unsupported options */
                 abort();
+        } else if (!strcmp(argv[i], "-xqbesil")) {
+            qbesil = 1;
         } else if (argv[i][0] == '-') {
             fatal("Unidentified option");
         } else
@@ -71,7 +86,7 @@ int main(int argc, char *argv[])
     if (!in) {
         printf("Missing source file!\n");
         printf(
-            "Usage: shecc [-o output] [+m] [--dump-ir] [--no-libc] "
+            "Usage: shecc [-o output] [+m] [--dump-ir] [--no-libc] [-xqbesil] "
             "<input.c>\n");
         return -1;
     }
@@ -79,12 +94,18 @@ int main(int argc, char *argv[])
     /* initialize global objects */
     global_init();
 
-    /* include libc */
-    if (libc)
-        libc_generate();
+    if (qbesil) {
+        qs_ir_module_t *mod = qs_parse(in);
 
-    /* load and parse source code into IR */
-    parse(in);
+        qs_gen_module(mod);
+    } else {
+        /* include libc */
+        if (libc)
+            libc_generate();
+
+        /* load and parse source code into IR */
+        parse(in);
+    }
 
     ssa_build();
 
