@@ -640,6 +640,9 @@ qs_ir_val_t *qs_parse_value(qs_ir_module_t *mod,
 
 bool qs_has_terminator(qs_ir_block_t *blk)
 {
+    if (blk->nin.len == 0)
+        return false;
+
     switch (blk->ins[blk->nin.len - 1].op) {
     case QS_OP_JMP:
     case QS_OP_JNZ:
@@ -818,9 +821,7 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
         bb_connect(blk->bb, target->bb, NEXT);
         qs_ir_inst_t *jmp = qs_new_inst(blk, QS_OP_JMP);
         qs_inst_add_block(jmp, target);
-        return;
-    }
-    if (qs_accept(QS_TOK_KW_JNZ)) {
+    } else if (qs_accept(QS_TOK_KW_JNZ)) {
         qs_ir_val_t *cond = qs_parse_value(mod, func, QS_TY_WORD);
         qs_expect(QS_TOK_COMMA);
         char *label1_name = qs_tok.text;
@@ -844,17 +845,14 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
         qs_inst_add_arg(jnz, cond);
         qs_inst_add_block(jnz, target1);
         qs_inst_add_block(jnz, target2);
-        return;
-    }
-    if (qs_accept(QS_TOK_KW_RET)) {
+    } else if (qs_accept(QS_TOK_KW_RET)) {
         qs_ir_val_t *val = qs_parse_value(mod, func, QS_TY_WORD);
         qs_ir_inst_t *ret = qs_new_inst(blk, QS_OP_RET);
-        qs_inst_add_arg(ret, val);
-        return;
-    }
-    if (qs_accept(QS_TOK_KW_HLT)) {
+        if (val)
+            qs_inst_add_arg(ret, val);
+        bb_connect(blk->bb, func->func->exit, NEXT);
+    } else if (qs_accept(QS_TOK_KW_HLT)) {
         qs_new_inst(blk, QS_OP_HLT);
-        return;
     }
 }
 
@@ -877,6 +875,8 @@ void qs_parse_function(qs_ir_module_t *mod)
     qs_ir_func_t *func = qs_new_func(mod, func_name, ret_type, g);
     func->func = add_func(trim_sigil(func_name), false);
     func->blk = add_block(NULL, func->func, NULL);
+    func->func->bbs = bb_create(func->blk);
+    func->func->exit = bb_create(func->blk);
 
     qs_expect(QS_TOK_LPAREN);
     int param_cnt = 0;
@@ -1288,7 +1288,8 @@ void qs_print_inst(qs_ir_inst_t *in)
         break;
     case QS_OP_RET:
         printf("RET ");
-        qs_print_value(&in->args[0]);
+        if (&in->args[0])
+            qs_print_value(&in->args[0]);
         printf("\n");
         break;
     case QS_OP_HLT:

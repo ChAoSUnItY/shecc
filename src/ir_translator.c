@@ -46,6 +46,18 @@ opcode_t qs_get_binary_op(qs_ir_op_t op)
         return OP_rshift;
     case QS_OP_SHL:
         return OP_lshift;
+    case QS_OP_CEQ:
+        return OP_eq;
+    case QS_OP_CNE:
+        return OP_neq;
+    case QS_OP_CLT:
+        return OP_lt;
+    case QS_OP_CLE:
+        return OP_leq;
+    case QS_OP_CGT:
+        return OP_gt;
+    case QS_OP_CGE:
+        return OP_geq;
     default:
         fatal("Not an valid binary opcode");
         return 0;
@@ -153,6 +165,12 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
     case QS_OP_XOR:
     case QS_OP_SHR:
     case QS_OP_SHL:
+    case QS_OP_CEQ:
+    case QS_OP_CNE:
+    case QS_OP_CLT:
+    case QS_OP_CLE:
+    case QS_OP_CGT:
+    case QS_OP_CGE:
         opcode = qs_get_binary_op(inst->op);
         dest = qs_gen_dest(inst->dest, bb, blk);
         rs1 = qs_gen_value(rs1_val, bb, blk);
@@ -246,6 +264,11 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_branch, NULL, rs1, NULL, 0, NULL);
         break;
     case QS_OP_RET:
+        if (!rs1_val) {
+            add_insn(blk, bb, OP_return, NULL, NULL, NULL, 0, NULL);
+            break;
+        }
+
         rs1 = qs_gen_value(rs1_val, bb, blk);
 
         add_insn(blk, bb, OP_return, NULL, rs1, NULL, 0, NULL);
@@ -263,20 +286,30 @@ void qs_gen_block(qs_ir_block_t *ir_blk, block_t *blk)
     }
 }
 
-basic_block_t *qs_gen_func(func_t *func, qs_ir_func_t *ir_func, block_t *blk)
+void qs_gen_func(qs_ir_func_t *ir_func, char *name)
 {
-    basic_block_t *bb;
+    func_t *func = add_func(name, false);
+    strcpy(func->return_def.var_name, name);
+    func->return_def.type = qs_convert_type(ir_func->rty);
+    init_var(&func->return_def);
+
+    func->stack_size = 4;
+    func->num_params = ir_func->nparams;
+    for (int j = 0; j < func->num_params; j++) {
+        qs_ir_temp_t *temp = &ir_func->temps[j];
+
+        init_var(&func->param_defs[j]);
+        strcpy(func->param_defs[j].var_name, trim_sigil(temp->name));
+        func->param_defs[j].type = qs_convert_type(temp->type);
+    }
+
+    func->va_args = ir_func->variadic;
 
     if (ir_func->nblock.len > 0)
         bb_connect(func->bbs, ir_func->blocks[0].bb, NEXT);
 
-    for (int i = 0; i < ir_func->nblock.len; i++) {
-        bb = ir_func->blocks[i].bb;
-
-        qs_gen_block(&ir_func->blocks[i], blk);
-    }
-
-    return bb;
+    for (int i = 0; i < ir_func->nblock.len; i++)
+        qs_gen_block(&ir_func->blocks[i], ir_func->blk);
 }
 
 void qs_gen_data(qs_ir_data_t *ir_data, char *name)
@@ -319,8 +352,6 @@ void qs_gen_data(qs_ir_data_t *ir_data, char *name)
 
 void qs_gen_module(qs_ir_module_t *mod)
 {
-    qs_ir_data_t *data;
-    qs_ir_func_t *ir_func;
     char *name;
     func_t *func;
 
@@ -366,30 +397,7 @@ void qs_gen_module(qs_ir_module_t *mod)
             qs_gen_data(mod->globals[i].data, name);
         }
         if (mod->globals[i].kind == QS_GLOBAL_FUNC) {
-            ir_func = mod->globals[i].func;
-            func = add_func(name, false);
-            strcpy(func->return_def.var_name, name);
-            func->return_def.type = qs_convert_type(ir_func->rty);
-            init_var(&func->return_def);
-
-            func->stack_size = 4;
-            func->num_params = ir_func->nparams;
-            for (int j = 0; j < func->num_params; j++) {
-                qs_ir_temp_t *temp = &ir_func->temps[j];
-
-                init_var(&func->param_defs[j]);
-                strcpy(func->param_defs[j].var_name, trim_sigil(temp->name));
-                func->param_defs[j].type = qs_convert_type(temp->type);
-            }
-
-            func->va_args = ir_func->variadic;
-            func->bbs = bb_create(ir_func->blk);
-            func->exit = bb_create(ir_func->blk);
-
-            basic_block_t *bb = qs_gen_func(func, ir_func, ir_func->blk);
-
-            if (bb)
-                bb_connect(bb, func->exit, NEXT);
+            qs_gen_func(mod->globals[i].func, name);
         }
     }
 }

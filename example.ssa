@@ -1,8 +1,252 @@
-data $data = { b "Hello World!" }
+data $data = { b "Hello World!\n" }
+data $data2 = { b "Hallo World!\n" }
+
+function w $strlen(w %str) {
+  %t3 =w copy 0
+  %i =w copy %t3
+  @L_begin_0
+  %t4 =w copy 1
+  %t5 =w mul %i, %t4
+  %t6 =w add %str, %t5
+  %t7 =b loadb %t6
+  jnz %t7, @L_then_0, @L_0
+  @L_then_0
+  %t8 =w copy 1
+  %i =w add %i, %t8
+  %t9 =w copy -1
+  %t10 =w add %i, %t9
+  @L_1
+  jmp @L_begin_0
+  @L_0
+  ret %i
+}
+function w $strcmp(w %s1, w %s2) {
+  %t11 =w copy 0
+  %i =w copy %t11
+  @L_begin_1
+  %t12 =w copy 1
+  %t13 =w mul %i, %t12
+  %t14 =w add %s1, %t13
+  %t15 =b loadb %t14
+  %t16 =w copy 1
+  %t17 =w mul %i, %t16
+  %t18 =w add %s2, %t17
+  %t19 =b loadb %t18
+  %t20 =w and %t15, %t19
+  jnz %t20, @L_then_1, @L_2
+  @L_then_1
+  %t21 =w copy 1
+  %t22 =w mul %i, %t21
+  %t23 =w add %s1, %t22
+  %t24 =b loadb %t23
+  %t25 =w copy 1
+  %t26 =w mul %i, %t25
+  %t27 =w add %s2, %t26
+  %t28 =b loadb %t27
+  %t29 =w clt %t24, %t28
+  jnz %t29, @L_then_2, @L_else_2
+  @L_then_2
+  %t30 =w copy -1
+  ret %t30
+  @L_else_2
+  %t31 =w copy 1
+  %t32 =w mul %i, %t31
+  %t33 =w add %s1, %t32
+  %t34 =b loadb %t33
+  %t35 =w copy 1
+  %t36 =w mul %i, %t35
+  %t37 =w add %s2, %t36
+  %t38 =b loadb %t37
+  %t39 =w cgt %t34, %t38
+  jnz %t39, @L_then_3, @L_else_3
+  @L_then_3
+  %t40 =w copy 1
+  ret %t40
+  @L_else_3
+  %t41 =w copy 1
+  %i =w add %i, %t41
+  %t42 =w copy -1
+  %t43 =w add %i, %t42
+  @L_3
+  jmp @L_begin_1
+  @L_2
+  %t44 =w copy 1
+  %t45 =w mul %i, %t44
+  %t46 =w add %s1, %t45
+  %t47 =b loadb %t46
+  %t48 =w copy 1
+  %t49 =w mul %i, %t48
+  %t50 =w add %s2, %t49
+  %t51 =b loadb %t50
+  %t52 =w sub %t47, %t51
+  ret %t52
+}
+function w $strncmp(w %s1, w %s2, w %len) {
+  %t53 =w copy 0
+  %i =w copy %t53
+  @L_begin_4
+  %t54 =w clt %i, %len
+  jnz %t54, @L_then_4, @L_4
+  @L_then_4
+  %t55 =w copy 1
+  %t56 =w mul %i, %t55
+  %t57 =w add %s1, %t56
+  %t58 =b loadb %t57
+  %t59 =w copy 1
+  %t60 =w mul %i, %t59
+  %t61 =w add %s2, %t60
+  %t62 =b loadb %t61
+  %t63 =w clt %t58, %t62
+  jnz %t63, @L_then_5, @L_else_5
+  @L_then_5
+  %t64 =w copy -1
+  ret %t64
+  @L_else_5
+  %t65 =w copy 1
+  %t66 =w mul %i, %t65
+  %t67 =w add %s1, %t66
+  %t68 =b loadb %t67
+  %t69 =w copy 1
+  %t70 =w mul %i, %t69
+  %t71 =w add %s2, %t70
+  %t72 =b loadb %t71
+  %t73 =w cgt %t68, %t72
+  jnz %t73, @L_then_6, @L_else_6
+  @L_then_6
+  %t74 =w copy 1
+  ret %t74
+  @L_else_6
+  %t75 =w copy 1
+  %t76 =w mul %i, %t75
+  %t77 =w add %s1, %t76
+  %t78 =b loadb %t77
+  %t79 =b ceq %t78, 0
+  jnz %t79, @L_then_7, @L_else_7
+  @L_then_7
+  %t80 =w copy 0
+  ret %t80
+  @L_else_7
+  %t81 =w copy 1
+  %i =w add %i, %t81
+  %t82 =w copy -1
+  %t83 =w add %i, %t82
+  @L_5
+  jmp @L_begin_4
+  @L_4
+  %t84 =w copy 0
+  ret %t84
+}
+function w $strcpy(w %dest, w %src) {
+  %t85 =w copy 0
+  %i =w copy %t85
+  @L_begin_8
+  %t86 =w copy 1
+  %t87 =w mul %i, %t86
+  %t88 =w add %src, %t87
+  %t89 =b loadb %t88
+  jnz %t89, @L_then_8, @L_6
+  @L_then_8
+  %t90 =w copy 1
+  %t91 =w mul %i, %t90
+  %t92 =w add %src, %t91
+  %t93 =b loadb %t92
+  %t94 =w copy 1
+  %t95 =w mul %i, %t94
+  %t96 =w add %dest, %t95
+  storeb %t96, %t93
+  %t97 =w copy 1
+  %i =w add %i, %t97
+  %t98 =w copy -1
+  %t99 =w add %i, %t98
+  @L_7
+  jmp @L_begin_8
+  @L_6
+  %t100 =b copy 0
+  %t101 =w copy 1
+  %t102 =w mul %i, %t101
+  %t103 =w add %dest, %t102
+  storeb %t103, %t100
+  ret %dest
+}
+function w $strncpy(w %dest, w %src, w %len) {
+  %t104 =w copy 0
+  %i =w copy %t104
+  %t105 =w copy 0
+  %beyond =w copy %t105
+  @L_begin_9
+  %t106 =w clt %i, %len
+  jnz %t106, @L_then_9, @L_8
+  @L_then_9
+  %t107 =w copy 0
+  %t108 =w ceq %beyond, %t107
+  jnz %t108, @L_then_10, @L_else_10
+  @L_then_10
+  %t109 =w copy 1
+  %t110 =w mul %i, %t109
+  %t111 =w add %src, %t110
+  %t112 =b loadb %t111
+  %t113 =w copy 1
+  %t114 =w mul %i, %t113
+  %t115 =w add %dest, %t114
+  storeb %t115, %t112
+  %t116 =w copy 1
+  %t117 =w mul %i, %t116
+  %t118 =w add %src, %t117
+  %t119 =b loadb %t118
+  %t120 =w copy 0
+  %t121 =w ceq %t119, %t120
+  jnz %t121, @L_then_11, @L_else_11
+  @L_then_11
+  %t122 =w copy 1
+  %beyond =w copy %t122
+  jmp @L_end_11
+  @L_else_11
+  @L_end_11
+  jmp @L_end_10
+  @L_else_10
+  %t123 =b copy 0
+  %t124 =w copy 1
+  %t125 =w mul %i, %t124
+  %t126 =w add %dest, %t125
+  storeb %t126, %t123
+  @L_end_10
+  %t127 =w copy 1
+  %i =w add %i, %t127
+  %t128 =w copy -1
+  %t129 =w add %i, %t128
+  @L_9
+  jmp @L_begin_9
+  @L_8
+  ret %dest
+}
+function w $memcpy(w %dest, w %src, w %count) {
+  @L_begin_12
+  %t130 =w copy 0
+  %t131 =w cgt %count, %t130
+  jnz %t131, @L_then_12, @L_10
+  @L_then_12
+  %t132 =w copy -1
+  %count =w add %count, %t132
+  %t133 =w copy 1
+  %t134 =w add %count, %t133
+  %t135 =w copy 1
+  %t136 =w mul %count, %t135
+  %t137 =w add %src, %t136
+  %t138 =b loadb %t137
+  %t139 =w copy 1
+  %t140 =w mul %count, %t139
+  %t141 =w add %dest, %t140
+  storeb %t141, %t138
+  @L_11
+  jmp @L_begin_12
+  @L_10
+  ret %dest
+}
 
 function w $main() {
-  %t =w add $data, 1
-  storeb %t, 97
-  call $__syscall(w 4, w 1, w $data, w 12)
+  %len =w call $strlen(w $data)
+  call $__syscall(w 4, w 1, w $data, w %len)
+  call $memcpy(w $data, w $data2, w %len)
+  call $__syscall(w 4, w 1, w $data, w %len)
   ret 0
 }
