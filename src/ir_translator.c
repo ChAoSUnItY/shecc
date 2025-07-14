@@ -185,7 +185,12 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_negate, dest, rs1, NULL, 0, NULL);
         break;
     case QS_OP_SAR:
-        fatal("SAR: Opcode not supported");
+        printf("[WARN]: SAR: Opcode not supported, fallback to SHR\n");
+        dest = qs_gen_dest(inst->dest, bb, blk);
+        rs1 = qs_gen_value(rs1_val, bb, blk);
+        rs2 = qs_gen_value(rs2_val, bb, blk);
+
+        add_insn(blk, bb, OP_rshift, dest, rs1, rs2, 0, NULL);
         break;
     case QS_OP_LOADB:
     case QS_OP_LOADW:
@@ -224,7 +229,8 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         } else if (rs1_val->ival == 4) {
             dest->type = TY_int;
         } else {
-            fatal("ALLOC: Unsupported type size");
+            dest->type = TY_char;
+            dest->array_size = rs1_val->ival;
         }
 
         add_insn(blk, bb, OP_allocat, dest, NULL, NULL, 0, NULL);
