@@ -57,7 +57,6 @@
 
 int main(int argc, char *argv[])
 {
-    int qbesil = 0;
     int libc = 1;
     char *out = NULL, *in = NULL;
 
@@ -76,7 +75,7 @@ int main(int argc, char *argv[])
                 /* unsupported options */
                 abort();
         } else if (!strcmp(argv[i], "-xqbesil")) {
-            qbesil = 1;
+            qbe_sil = 1;
         } else if (argv[i][0] == '-') {
             fatal("Unidentified option");
         } else
@@ -94,7 +93,7 @@ int main(int argc, char *argv[])
     /* initialize global objects */
     global_init();
 
-    if (qbesil) {
+    if (qbe_sil) {
         qs_ir_module_t *mod = qs_parse(in);
 
         qs_gen_module(mod);

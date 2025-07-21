@@ -349,6 +349,7 @@ qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
     blk.succs = qs_dynarr_init(&blk.nsucc, 0, sizeof(qs_ir_block_t *));
     blk.resolved = false;
     blk.bb = bb_create(f->blk);
+    strcpy(blk.bb->bb_label_name, name);
     blk.bb->scope = f->blk;
 
     // avoid incompatible pointer conversion warning

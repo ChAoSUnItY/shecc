@@ -451,6 +451,7 @@ void hashmap_free(hashmap_t *map)
 
 /* options */
 
+bool qbe_sil = false;
 int dump_ir = 0;
 int hard_mul_div = 0;
 
@@ -765,9 +766,11 @@ basic_block_t *bb_create(block_t *parent)
     bb->scope = parent;
     bb->belong_to = parent->func;
 
-    if (dump_ir)
-        snprintf(bb->bb_label_name, MAX_VAR_LEN, ".label.%d", bb_label_idx++);
-
+    if (dump_ir) {
+        if (!qbe_sil || strlen(bb->bb_label_name) == 0)
+            snprintf(bb->bb_label_name, MAX_VAR_LEN, ".label.%d", bb_label_idx++);
+    }
+    
     return bb;
 }
 
