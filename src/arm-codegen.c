@@ -151,6 +151,7 @@ void cfg_flatten(void)
 
         /* reserve stack */
         flatten_ir = add_ph2_ir(OP_define);
+        strncpy(flatten_ir->func_name, func->return_def.var_name, MAX_VAR_LEN);
         flatten_ir->src0 = func->stack_size;
 
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {

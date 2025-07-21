@@ -108,12 +108,12 @@ int main(int argc, char *argv[])
 
     ssa_build();
 
+    /* SSA-based optimization */
+    optimize();
+
     /* dump first phase IR */
     if (dump_ir)
         dump_insn();
-
-    /* SSA-based optimization */
-    optimize();
 
     /* SSA-based liveness analyses */
     liveness_analysis();
