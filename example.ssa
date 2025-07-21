@@ -1,6 +1,7 @@
 data $data = { b "Hello World!\n" }
 data $data2 = { b "Hallo World!\n" }
 data $L_12 = { b "-2147483648" }
+data $gg = { b "KEK %d\n" }
 function v $abort() {
   ret
 }
@@ -479,13 +480,13 @@ function v $__str_base16(w %pb, w %val) {
 }
 function v $__fmtbuf_write_char(w %fmtbuf, w %val) {
   %ch =b alloc 1
-  %t289 =w add %fmtbuf, 12
+  %t289 =w add %fmtbuf, 8
   %t291 =w copy 1
   %t292 =w loadw %t289
   %t293 =w add %t292, %t291
   storew %t289, %t293
   @L_if_begin_21
-  %t294 =w add %fmtbuf, 8
+  %t294 =w add %fmtbuf, 4
   %t296 =w loadw %t294
   %t297 =w copy 1
   %t298 =w cle %t296, %t297
@@ -508,7 +509,7 @@ function v $__fmtbuf_write_char(w %fmtbuf, w %val) {
   %t313 =w loadw %t308
   %t314 =w add %t313, %t312
   storew %t308, %t314
-  %t315 =w add %fmtbuf, 8
+  %t315 =w add %fmtbuf, 4
   %t317 =w copy 1
   %t318 =w loadw %t315
   %t319 =w sub %t318, %t317
@@ -517,12 +518,12 @@ function v $__fmtbuf_write_char(w %fmtbuf, w %val) {
 }
 function v $__fmtbuf_write_str(w %fmtbuf, w %str, w %l) {
   %sz =w alloc 4
-  %t320 =w add %fmtbuf, 12
+  %t320 =w add %fmtbuf, 8
   %t322 =w loadw %t320
   %t323 =w add %t322, %l
   storew %t320, %t323
   @L_if_begin_22
-  %t324 =w add %fmtbuf, 8
+  %t324 =w add %fmtbuf, 4
   %t326 =w loadw %t324
   %t327 =w copy 1
   %t328 =w cle %t326, %t327
@@ -530,7 +531,7 @@ function v $__fmtbuf_write_str(w %fmtbuf, w %str, w %l) {
   @L_if_then_22
   ret
   @L_if_else_22
-  %t330 =w add %fmtbuf, 8
+  %t330 =w add %fmtbuf, 4
   %t332 =w loadw %t330
   %t333 =w copy 1
   %t334 =w sub %t332, %t333
@@ -554,7 +555,7 @@ function v $__fmtbuf_write_str(w %fmtbuf, w %str, w %l) {
   %t348 =w loadw %t344
   %t349 =w add %t348, %t347
   storew %t344, %t349
-  %t350 =w add %fmtbuf, 8
+  %t350 =w add %fmtbuf, 4
   %t352 =w loadw %t350
   %t353 =w sub %t352, %l
   storew %t350, %t353
@@ -972,106 +973,126 @@ function v $__format_to_buf(w %fmtbuf, w %format, w %var_args) {
   jmp @L_if_end_46
   @L_if_else_46
   @L_if_end_46
-  %t589 =w copy 1
-  %t590 =w mul %si, %t589
-  %t591 =w add %format, %t590
-  %t592 =b loadb %t591
-  %t593 =w ceq %t592, 37
-  jnz %t593, @L_44, @L_case_48
+  %t590 =w copy 1
+  %t591 =w mul %si, %t590
+  %t592 =w add %format, %t591
+  %t593 =b loadb %t592
+  %t589 =w ceq %t593, 37
+  jnz %t589, @L_44, @L_case_48
   @L_case_48
-  %t593 =w ceq %t592, 120
-  jnz %t593, @L_43, @L_case_49
+  %t594 =w copy 1
+  %t595 =w mul %si, %t594
+  %t596 =w add %format, %t595
+  %t597 =b loadb %t596
+  %t589 =w ceq %t597, 120
+  jnz %t589, @L_43, @L_case_49
   @L_case_49
-  %t593 =w ceq %t592, 100
-  jnz %t593, @L_42, @L_case_50
+  %t598 =w copy 1
+  %t599 =w mul %si, %t598
+  %t600 =w add %format, %t599
+  %t601 =b loadb %t600
+  %t589 =w ceq %t601, 100
+  jnz %t589, @L_42, @L_case_50
   @L_case_50
-  %t593 =w ceq %t592, 111
-  jnz %t593, @L_41, @L_case_51
+  %t602 =w copy 1
+  %t603 =w mul %si, %t602
+  %t604 =w add %format, %t603
+  %t605 =b loadb %t604
+  %t589 =w ceq %t605, 111
+  jnz %t589, @L_41, @L_case_51
   @L_case_51
-  %t593 =w ceq %t592, 99
-  jnz %t593, @L_40, @L_case_52
+  %t606 =w copy 1
+  %t607 =w mul %si, %t606
+  %t608 =w add %format, %t607
+  %t609 =b loadb %t608
+  %t589 =w ceq %t609, 99
+  jnz %t589, @L_40, @L_case_52
   @L_case_52
-  %t593 =w ceq %t592, 115
-  jnz %t593, @L_39, @L_38
+  %t610 =w copy 1
+  %t611 =w mul %si, %t610
+  %t612 =w add %format, %t611
+  %t613 =b loadb %t612
+  %t589 =w ceq %t613, 115
+  jnz %t589, @L_39, @L_38
   @L_39
-  %t595 =w copy %v
-  %t596 =w call $strlen(w %t595)
-  %l =w copy %t596
-  %t597 =w copy %fmtbuf
-  %t598 =w copy %v
-  %t599 =w copy %l
-  call $__fmtbuf_write_str(w %t597, w %t598, w %t599)
-  jmp @L_38
-  @L_40
-  %t600 =w copy %fmtbuf
-  %t601 =w copy %v
-  call $__fmtbuf_write_char(w %t600, w %t601)
-  jmp @L_38
-  @L_41
-  %t602 =w copy %fmtbuf
-  %t603 =w copy %v
-  %t604 =w copy %w
-  %t605 =w copy %zp
-  %t606 =w copy 8
-  %t607 =w copy %t606
-  %t608 =w copy %pp
-  call $__format(w %t602, w %t603, w %t604, w %t605, w %t607, w %t608)
-  jmp @L_38
-  @L_42
-  %t609 =w copy %fmtbuf
-  %t610 =w copy %v
-  %t611 =w copy %w
-  %t612 =w copy %zp
-  %t613 =w copy 10
-  %t614 =w copy %t613
-  %t615 =w copy 0
-  %t616 =w copy %t615
-  call $__format(w %t609, w %t610, w %t611, w %t612, w %t614, w %t616)
-  jmp @L_38
-  @L_43
+  %t615 =w copy %v
+  %t616 =w call $strlen(w %t615)
+  %l =w copy %t616
   %t617 =w copy %fmtbuf
   %t618 =w copy %v
-  %t619 =w copy %w
-  %t620 =w copy %zp
-  %t621 =w copy 16
-  %t622 =w copy %t621
-  %t623 =w copy %pp
-  call $__format(w %t617, w %t618, w %t619, w %t620, w %t622, w %t623)
+  %t619 =w copy %l
+  call $__fmtbuf_write_str(w %t617, w %t618, w %t619)
+  jmp @L_38
+  @L_40
+  %t620 =w copy %fmtbuf
+  %t621 =w copy %v
+  call $__fmtbuf_write_char(w %t620, w %t621)
+  jmp @L_38
+  @L_41
+  %t622 =w copy %fmtbuf
+  %t623 =w copy %v
+  %t624 =w copy %w
+  %t625 =w copy %zp
+  %t626 =w copy 8
+  %t627 =w copy %t626
+  %t628 =w copy %pp
+  call $__format(w %t622, w %t623, w %t624, w %t625, w %t627, w %t628)
+  jmp @L_38
+  @L_42
+  %t629 =w copy %fmtbuf
+  %t630 =w copy %v
+  %t631 =w copy %w
+  %t632 =w copy %zp
+  %t633 =w copy 10
+  %t634 =w copy %t633
+  %t635 =w copy 0
+  %t636 =w copy %t635
+  call $__format(w %t629, w %t630, w %t631, w %t632, w %t634, w %t636)
+  jmp @L_38
+  @L_43
+  %t637 =w copy %fmtbuf
+  %t638 =w copy %v
+  %t639 =w copy %w
+  %t640 =w copy %zp
+  %t641 =w copy 16
+  %t642 =w copy %t641
+  %t643 =w copy %pp
+  call $__format(w %t637, w %t638, w %t639, w %t640, w %t642, w %t643)
   jmp @L_38
   @L_44
-  %t624 =w copy %fmtbuf
-  %t625 =w copy 37
-  %t626 =w copy %t625
-  call $__fmtbuf_write_char(w %t624, w %t626)
-  %t627 =w copy 1
-  %si =w add %si, %t627
-  %t628 =w copy -1
-  %t629 =w add %si, %t628
+  %t644 =w copy %fmtbuf
+  %t645 =w copy 37
+  %t646 =w copy %t645
+  call $__fmtbuf_write_char(w %t644, w %t646)
+  %t647 =w copy 1
+  %si =w add %si, %t647
+  %t648 =w copy -1
+  %t649 =w add %si, %t648
   jmp @L_35
   @L_38
-  %t630 =w copy 1
-  %pi =w add %pi, %t630
-  %t631 =w copy -1
-  %t632 =w add %pi, %t631
-  %t633 =w copy 1
-  %si =w add %si, %t633
-  %t634 =w copy -1
-  %t635 =w add %si, %t634
+  %t650 =w copy 1
+  %pi =w add %pi, %t650
+  %t651 =w copy -1
+  %t652 =w add %pi, %t651
+  %t653 =w copy 1
+  %si =w add %si, %t653
+  %t654 =w copy -1
+  %t655 =w add %si, %t654
   @L_if_end_43
   @L_35
   jmp @L_for_begin_42
   @L_34
   @L_if_begin_54
-  %t636 =w add %fmtbuf, 8
-  %t638 =w loadw %t636
-  jnz %t638, @L_if_then_54, @L_if_else_54
+  %t656 =w add %fmtbuf, 4
+  %t658 =w loadw %t656
+  jnz %t658, @L_if_then_54, @L_if_else_54
   @L_if_then_54
-  %t640 =w add %fmtbuf, 0
-  %t642 =w loadw %t640
-  %t643 =w copy 0
-  %t644 =w add %t642, %t643
-  %t645 =b copy 0
-  storeb %t644, %t645
+  %t660 =w add %fmtbuf, 0
+  %t662 =w loadw %t660
+  %t663 =w copy 0
+  %t664 =w add %t662, %t663
+  %t665 =b copy 0
+  storeb %t664, %t665
   jmp @L_if_end_54
   @L_if_else_54
   @L_if_end_54
@@ -1079,36 +1100,40 @@ function v $__format_to_buf(w %fmtbuf, w %format, w %var_args) {
 }
 function w $printf(w %str, ...) {
   %buffer =b alloc 200
-  %fmtbuf =w alloc 16
-  %t646 =w add %fmtbuf, 0
-  storew %t646, %buffer
-  %t648 =w add %fmtbuf, 8
-  %t650 =w copy 2147483647
-  storew %t648, %t650
-  %t651 =w add %fmtbuf, 12
-  %t653 =w copy 0
-  storew %t651, %t653
-  %t655 =w copy %fmtbuf
-  %t656 =w copy %str
-  %t658 =w copy 32
-  %t659 =w add %str, %t658
-  %t660 =w copy %t659
-  call $__format_to_buf(w %t655, w %t656, w %t660)
-  %t661 =w copy 4
-  %t662 =w copy %t661
-  %t663 =w copy 1
-  %t664 =w copy %t663
-  %t665 =w copy %buffer
-  %t666 =w add %fmtbuf, 12
-  %t668 =w loadw %t666
-  %t669 =w copy %t668
-  %t670 =w call $__syscall(w %t662, w %t664, w %t665, w %t669)
-  ret %t670
+  %fmtbuf =w alloc 12
+  %t667 =w addr %fmtbuf
+  %t666 =w add %t667, 0
+  storew %t666, %buffer
+  %t669 =w addr %fmtbuf
+  %t668 =w add %t669, 4
+  %t670 =w copy 2147483647
+  storew %t668, %t670
+  %t672 =w addr %fmtbuf
+  %t671 =w add %t672, 8
+  %t673 =w copy 0
+  storew %t671, %t673
+  %t674 =w addr %fmtbuf
+  %t675 =w copy %t674
+  %t676 =w copy %str
+  %t677 =w addr %str
+  %t678 =w copy 4
+  %t679 =w add %t677, %t678
+  %t680 =w copy %t679
+  call $__format_to_buf(w %t675, w %t676, w %t680)
+  %t681 =w copy 4
+  %t682 =w copy %t681
+  %t683 =w copy 1
+  %t684 =w copy %t683
+  %t685 =w copy %buffer
+  %t687 =w addr %fmtbuf
+  %t686 =w add %t687, 8
+  %t688 =w loadw %t686
+  %t689 =w copy %t688
+  %t690 =w call $__syscall(w %t682, w %t684, w %t685, w %t689)
+  ret %t690
 }
 function w $main() {
-  %len =w call $strlen(w $data)
-  call $__syscall(w 4, w 1, w $data, w %len)
-  call $memcpy(w $data, w $data2, w %len)
-  call $__syscall(w 4, w 1, w $data, w %len)
+  %t =w copy 111
+  call $printf(w $gg, w %t)
   ret 0
 }

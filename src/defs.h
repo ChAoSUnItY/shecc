@@ -259,7 +259,7 @@ typedef enum {
 /* variable definition */
 typedef struct {
     int counter;
-    int stack[64];
+    int stack[256];
     int stack_idx;
 } rename_t;
 
@@ -302,7 +302,7 @@ struct var {
     int in_loop;
     struct var *base;
     int subscript;
-    struct var *subscripts[64];
+    struct var *subscripts[256];
     int subscripts_idx;
     rename_t rename;
     ref_block_list_t ref_block_list; /* blocks which kill variable */
@@ -475,13 +475,13 @@ struct basic_block {
     int live_out_idx;
     int rpo;
     int rpo_r;
-    struct basic_block *DF[64];
-    struct basic_block *RDF[64];
+    struct basic_block *DF[256];
+    struct basic_block *RDF[256];
     int df_idx;
     int rdf_idx;
     int visited;
     bool useful; /* indicate whether this BB contains useful instructions */
-    struct basic_block *dom_next[64];
+    struct basic_block *dom_next[256];
     struct basic_block *dom_prev;
     struct basic_block *rdom_next[256];
     struct basic_block *rdom_prev;
