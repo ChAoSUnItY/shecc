@@ -89,6 +89,7 @@ typedef enum {
     QS_OP_SAR,
     QS_OP_SHR,
     QS_OP_SHL,
+    QS_OP_ADDR,
     QS_OP_LOADB,
     QS_OP_LOADW,
     QS_OP_STOREB,
@@ -685,6 +686,7 @@ qs_ir_op_t op_from_ident(char *s)
     MAP("cge", QS_OP_CGE);
     MAP("extsb", QS_OP_EXTSB);
     MAP("copy", QS_OP_COPY);
+    MAP("addr", QS_OP_ADDR);
 #undef MAP
     return -1;
 }
@@ -1149,6 +1151,12 @@ void qs_print_inst(qs_ir_inst_t *in)
         qs_print_value(&in->args[0]);
         printf(" ");
         qs_print_value(&in->args[1]);
+        printf("\n");
+        break;
+    case QS_OP_ADDR:
+        qs_print_value(in->dest);
+        printf(" = ADDR ");
+        qs_print_value(&in->args[0]);
         printf("\n");
         break;
     case QS_OP_LOADB:

@@ -104,8 +104,6 @@ var_t *qs_gen_dest(qs_ir_val_t *val, basic_block_t *bb, block_t *blk)
         if (!var) {
             var = require_var(blk);
             strcpy(var->var_name, name);
-            add_insn(blk, bb, OP_allocat, var, NULL, NULL, 0, NULL);
-            add_symbol(bb, var);
         }
         return var;
     }
@@ -191,6 +189,12 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         rs2 = qs_gen_value(rs2_val, bb, blk);
 
         add_insn(blk, bb, OP_rshift, dest, rs1, rs2, 0, NULL);
+        break;
+    case QS_OP_ADDR:
+        dest = qs_gen_dest(inst->dest, bb, blk);
+        rs1 = qs_gen_value(rs1_val, bb, blk);
+
+        add_insn(blk, bb, OP_address_of, dest, rs1, NULL, 0, NULL);
         break;
     case QS_OP_LOADB:
     case QS_OP_LOADW:
