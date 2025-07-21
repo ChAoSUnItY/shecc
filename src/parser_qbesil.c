@@ -137,14 +137,18 @@ struct qs_ir_val {
 
 struct qs_ir_inst {
     qs_ir_op_t op;
-
     qs_ir_val_t *dest;
-
+    
+    // Array of arguments
     qs_ir_val_t *args;
     qs_dynarr_sz_t narg;
-
+    
+    // Array of block references
     qs_ir_block_t **blocks;
     qs_dynarr_sz_t nblock;
+
+    // Intrusive linked list
+    struct qs_ir_inst *next;
 };
 
 struct qs_ir_temp {
@@ -157,9 +161,9 @@ struct qs_ir_block {
     char *name;
     basic_block_t *bb;
 
+    // Head of instruction list
     qs_ir_inst_t *ins;
-    qs_dynarr_sz_t nin;
-
+    
     qs_ir_block_t **preds;
     qs_dynarr_sz_t npred;
 
@@ -344,10 +348,10 @@ qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
 {
     qs_ir_block_t blk;
     blk.name = qs_arena_strdup(name, strlen(name));
-    blk.ins = qs_dynarr_init(&blk.nin, 0, sizeof(qs_ir_inst_t));
     blk.preds = qs_dynarr_init(&blk.npred, 0, sizeof(qs_ir_block_t *));
     blk.succs = qs_dynarr_init(&blk.nsucc, 0, sizeof(qs_ir_block_t *));
     blk.resolved = false;
+    blk.ins = NULL;
     blk.bb = bb_create(f->blk);
     strcpy(blk.bb->bb_label_name, name);
     blk.bb->scope = f->blk;
@@ -417,18 +421,24 @@ qs_ir_data_t *qs_new_data(qs_ir_module_t *m, char *name, qs_ir_global_t *g)
 
 qs_ir_inst_t *qs_new_inst(qs_ir_block_t *blk, qs_ir_op_t op)
 {
-    qs_ir_inst_t inst;
-    inst.op = op;
-    inst.dest = NULL;
-    inst.args = qs_dynarr_init(&inst.narg, 0, sizeof(qs_ir_val_t));
-    inst.blocks = qs_dynarr_init(&inst.nblock, 0, sizeof(qs_ir_block_t *));
+    qs_ir_inst_t *inst = qs_arena_alloc(sizeof(qs_ir_inst_t));
+    inst->op = op;
+    inst->dest = NULL;
+    inst->args = qs_dynarr_init(&inst->narg, 0, sizeof(qs_ir_val_t));
+    inst->blocks = qs_dynarr_init(&inst->nblock, 0, sizeof(qs_ir_block_t *));
+    inst->next = NULL;
 
-    // avoid incompatible pointer conversion warning
-    void *data = blk->ins;
-    void *elem_ptr = &inst;
-    blk->ins = qs_dynarr_push(data, &blk->nin, elem_ptr);
-    data = blk->ins;
-    return qs_dynarr_get(data, &blk->nin, blk->nin.len - 1);
+    // Add to end of list
+    if (!blk->ins) {
+        blk->ins = inst;
+    } else {
+        qs_ir_inst_t *last = blk->ins;
+        while (last->next)
+            last = last->next;
+        last->next = inst;
+    }
+
+    return inst;
 }
 
 void qs_inst_add_arg(qs_ir_inst_t *inst, qs_ir_val_t *val)
@@ -642,10 +652,15 @@ qs_ir_val_t *qs_parse_value(qs_ir_module_t *mod,
 
 bool qs_has_terminator(qs_ir_block_t *blk)
 {
-    if (blk->nin.len == 0)
+    if (!blk->ins)
         return false;
 
-    switch (blk->ins[blk->nin.len - 1].op) {
+    // Find last instruction
+    qs_ir_inst_t *last = blk->ins;
+    while (last->next)
+        last = last->next;
+
+    switch (last->op) {
     case QS_OP_JMP:
     case QS_OP_JNZ:
     case QS_OP_RET:
@@ -1312,8 +1327,8 @@ void qs_print_inst(qs_ir_inst_t *in)
 
 void qs_print_block(qs_ir_block_t *blk)
 {
-    for (int i = 0; i < blk->nin.len; ++i) {
-        qs_print_inst(&blk->ins[i]);
+    for (qs_ir_inst_t *in = blk->ins; in; in = in->next) {
+        qs_print_inst(in);
     }
 }
 
@@ -1330,7 +1345,7 @@ void qs_print_func(qs_ir_func_t *func)
         printf(", ...");
     printf(") {\n");
     for (int i = 0; i < func->nblock.len; ++i) {
-        printf("BLOCK %s:\n", func->blocks[i].name, func->blocks[i].nin.len);
+        printf("BLOCK %s:\n", func->blocks[i].name);
         qs_print_block(&func->blocks[i]);
     }
     printf("}\n");

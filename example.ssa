@@ -1133,7 +1133,7 @@ function w $printf(w %str, ...) {
   ret %t690
 }
 function w $main() {
-  %t =w copy 111
+  %t =w copy 21
   call $printf(w $gg, w %t)
   ret 0
 }

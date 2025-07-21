@@ -291,8 +291,8 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
 
 void qs_gen_block(qs_ir_block_t *ir_blk, block_t *blk)
 {
-    for (int i = 0; i < ir_blk->nin.len; ++i) {
-        qs_gen_inst(&ir_blk->ins[i], ir_blk->bb, blk);
+    for (qs_ir_inst_t *in = ir_blk->ins; in; in = in->next) {
+        qs_gen_inst(in, ir_blk->bb, blk);
     }
 }
 
