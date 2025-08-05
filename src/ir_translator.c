@@ -147,10 +147,13 @@ var_t *qs_gen_value(qs_ir_val_t *val, basic_block_t *bb, block_t *blk)
 
 void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
 {
-    qs_ir_val_t *rs1_val = &inst->args[0], *rs2_val = &inst->args[1];
+    qs_ir_val_t *rs1_val = inst->args, *rs2_val = NULL;
     opcode_t opcode;
     int sz;
     var_t *dest, *rs1, *rs2;
+
+    if (inst->args)
+        rs2_val = inst->args->next;
 
     switch (inst->op) {
     case QS_OP_ADD:
@@ -247,14 +250,18 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_assign, dest, rs1, NULL, 0, NULL);
         break;
     case QS_OP_CALL: {
+        int len = 0;
         var_t *args[MAX_PARAMS];
+        qs_ir_val_t *arg = inst->args->next;
 
-        for (int i = 1; i < inst->narg.len; i++)
-            args[i - 1] = qs_gen_value(&inst->args[i], bb, blk);
+        for (int i = 0; arg; arg = arg->next) {
+            args[i] = qs_gen_value(arg, bb, blk);
+            i++;
+            len++;
+        }
 
-        for (int i = 0; i < inst->narg.len - 1; i++)
-            add_insn(blk, bb, OP_push, NULL, args[i], NULL,
-                     inst->narg.len - i - 1, NULL);
+        for (int i = 0; i < len; i++)
+            add_insn(blk, bb, OP_push, NULL, args[i], NULL, len - i - 1, NULL);
 
         add_insn(blk, bb, OP_call, NULL, NULL, NULL, 0,
                  trim_sigil(rs1_val->global->name));
@@ -315,11 +322,18 @@ void qs_gen_func(qs_ir_func_t *ir_func, char *name)
 
     func->va_args = ir_func->variadic;
 
-    if (ir_func->nblock.len > 0)
-        bb_connect(func->bbs, ir_func->blocks[0].bb, NEXT);
+    qs_ir_block_t *blk = ir_func->blocks;
 
-    for (int i = 0; i < ir_func->nblock.len; i++)
-        qs_gen_block(&ir_func->blocks[i], ir_func->blk);
+    if (blk)
+        bb_connect(func->bbs, blk->bb, NEXT);
+
+    while (blk) {
+        qs_gen_block(blk, blk->bb->scope);
+        blk = blk->next;
+    }
+
+    if (blk)
+        bb_connect(blk->bb, func->exit, NEXT);
 }
 
 void qs_gen_data(qs_ir_data_t *ir_data, char *name)
@@ -336,7 +350,7 @@ void qs_gen_data(qs_ir_data_t *ir_data, char *name)
 
     qs_ir_dataitem_t *data_item = &ir_data->dataitems[0];
 
-    var_t *global_var = require_typed_var(GLOBAL_BLOCK, TY_int);
+    var_t *global_var = require_var(GLOBAL_BLOCK);
     strcpy(global_var->var_name, name);
     global_var->is_global = true;
     add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_allocat, global_var, NULL, NULL,
@@ -344,6 +358,9 @@ void qs_gen_data(qs_ir_data_t *ir_data, char *name)
 
     switch (data_item->kind) {
     case QS_DI_STR: {
+        global_var->type = TY_char;
+        global_var->is_ptr = 1;
+
         var_t *vd = require_typed_ptr_var(GLOBAL_BLOCK, TY_char, 1);
         gen_name_to(vd->var_name);
         vd->init_val = write_literal_symbol(data_item->str);
@@ -352,6 +369,34 @@ void qs_gen_data(qs_ir_data_t *ir_data, char *name)
                  NULL, 0, NULL);
         add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd,
                  NULL, 0, NULL);
+        break;
+    }
+    case QS_DI_ZERO: {
+        if (data_item->zbytes == 1) {
+            global_var->type = TY_char;
+        } else if (data_item->zbytes == 4) {
+            global_var->type = TY_int;
+        } else {
+            global_var->type = TY_char;
+            global_var->array_size = data_item->zbytes;
+        }
+        // var_t *vd = require_typed_var(GLOBAL_BLOCK, TY_int);
+        // gen_name_to(vd->var_name);
+        // vd->init_val = 0;
+
+        // add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL, NULL, 0, NULL);
+        // add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd, NULL, 0, NULL);
+        break;
+    }
+    case QS_DI_CONST: {
+        global_var->type = qs_convert_type(data_item->type);
+        
+        var_t *vd = require_typed_var(GLOBAL_BLOCK, TY_int);
+        gen_name_to(vd->var_name);
+        vd->init_val = data_item->ival;
+
+        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL, NULL, 0, NULL);
+        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd, NULL, 0, NULL);
         break;
     }
     default:

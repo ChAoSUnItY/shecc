@@ -6,6 +6,9 @@
 
 #include "lexer_qbesil.c"
 
+block_t *scope_stack[MAX_OPERAND_STACK_SIZE];
+int scope_depth = 0;
+
 char *trim_sigil(char *identifier)
 {
     switch (identifier[0]) {
@@ -117,6 +120,7 @@ typedef enum { QS_TY_VOID, QS_TY_BYTE, QS_TY_WORD, QS_TY_NULL } qs_ir_type_t;
 typedef struct qs_ir_val qs_ir_val_t;
 typedef struct qs_ir_inst qs_ir_inst_t;
 typedef struct qs_ir_temp qs_ir_temp_t;
+typedef struct qs_ir_block_list qs_ir_block_list_t;
 typedef struct qs_ir_block qs_ir_block_t;
 typedef struct qs_ir_func qs_ir_func_t;
 typedef struct qs_ir_dataitem qs_ir_dataitem_t;
@@ -133,6 +137,8 @@ struct qs_ir_val {
     qs_ir_temp_t *temp;
     int ival;
     qs_ir_global_t *global;
+
+    qs_ir_val_t *next;
 };
 
 struct qs_ir_inst {
@@ -141,14 +147,11 @@ struct qs_ir_inst {
     
     // Array of arguments
     qs_ir_val_t *args;
-    qs_dynarr_sz_t narg;
-    
-    // Array of block references
-    qs_ir_block_t **blocks;
-    qs_dynarr_sz_t nblock;
 
-    // Intrusive linked list
-    struct qs_ir_inst *next;
+    qs_ir_block_t *block1;
+    qs_ir_block_t *block2;
+
+    qs_ir_inst_t *next;
 };
 
 struct qs_ir_temp {
@@ -157,20 +160,24 @@ struct qs_ir_temp {
     int isparam;
 };
 
+struct qs_ir_block_list {
+    qs_ir_block_t *blk;
+    qs_ir_block_list_t *next;
+};
+
 struct qs_ir_block {
     char *name;
     basic_block_t *bb;
 
     // Head of instruction list
     qs_ir_inst_t *ins;
-    
-    qs_ir_block_t **preds;
-    qs_dynarr_sz_t npred;
 
-    qs_ir_block_t **succs;
-    qs_dynarr_sz_t nsucc;
+    qs_ir_block_list_t *preds;
+    qs_ir_block_list_t *succs;
 
     bool resolved;  // support forward reference
+
+    qs_ir_block_t *next;
 };
 
 struct qs_ir_func {
@@ -183,10 +190,11 @@ struct qs_ir_func {
     bool variadic;
 
     qs_ir_block_t *blocks;
-    qs_dynarr_sz_t nblock;
 
     func_t *func;
     block_t *blk;
+
+    qs_ir_func_t *next;
 };
 
 typedef enum {
@@ -322,62 +330,93 @@ qs_ir_func_t *qs_new_func(qs_ir_module_t *m,
                           qs_ir_type_t rty,
                           qs_ir_global_t *g)
 {
-    qs_ir_func_t f;
-    f.rty = rty;
-    f.temps = qs_dynarr_init(&f.ntemp, 0, sizeof(qs_ir_temp_t));
-    f.nparams = 0;
-    f.variadic = false;
-    f.blocks = qs_dynarr_init(&f.nblock, 0, sizeof(qs_ir_block_t));
+    qs_ir_func_t *f = qs_arena_alloc(sizeof(qs_ir_func_t)), *cur;
+    f->rty = rty;
+    f->temps = qs_dynarr_init(&f->ntemp, 0, sizeof(qs_ir_temp_t));
+    f->nparams = 0;
+    f->variadic = false;
+    f->blocks = NULL;
+    f->next = NULL;
 
-    // avoid incompatible pointer conversion warning
-    void *data = m->funcs;
-    void *elem_ptr = &f;
-    m->funcs = qs_dynarr_push(data, &m->nfunc, elem_ptr);
-    data = m->funcs;
-    qs_ir_func_t *fp = qs_dynarr_get(data, &m->nfunc, m->nfunc.len - 1);
+    if (!m->funcs) {
+        m->funcs = f;
+    } else {
+        cur = m->funcs;
+
+        while (cur->next)
+            cur = cur->next;
+
+        cur->next = f;
+    }
 
     if (!g)
         g = qs_new_global_sym(m, name);
-    g->func = fp;
+    g->func = f;
     g->kind = QS_GLOBAL_FUNC;
 
-    return fp;
+    return f;
 }
 
 qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
 {
-    qs_ir_block_t blk;
-    blk.name = qs_arena_strdup(name, strlen(name));
-    blk.preds = qs_dynarr_init(&blk.npred, 0, sizeof(qs_ir_block_t *));
-    blk.succs = qs_dynarr_init(&blk.nsucc, 0, sizeof(qs_ir_block_t *));
-    blk.resolved = false;
-    blk.ins = NULL;
-    blk.bb = bb_create(f->blk);
-    strcpy(blk.bb->bb_label_name, name);
-    blk.bb->scope = f->blk;
+    qs_ir_block_t *blk = qs_arena_alloc(sizeof(qs_ir_block_t)), *cur;
+    blk->name = qs_arena_strdup(name, strlen(name));
+    blk->preds = NULL;
+    blk->succs = NULL;
+    blk->resolved = false;
+    blk->next = NULL;
+    blk->ins = NULL;
+    blk->bb = bb_create(scope_stack[scope_depth - 1]); // Later adjusted by block resolution
+    strcpy(blk->bb->bb_label_name, name);
 
-    // avoid incompatible pointer conversion warning
-    void *data = f->blocks;
-    void *elem_ptr = &blk;
-    f->blocks = qs_dynarr_push(data, &f->nblock, elem_ptr);
-    data = f->blocks;
-    return qs_dynarr_get(data, &f->nblock, f->nblock.len - 1);
+    if (!f->blocks) {
+        f->blocks = blk;
+    } else {
+        cur = f->blocks;
+
+        while (cur->next)
+            cur = cur->next;
+
+        cur->next = blk;
+    }
+
+    return blk;
 }
 
 void qs_block_add_succ(qs_ir_block_t *blk, qs_ir_block_t *succ)
 {
-    // avoid incompatible pointer conversion warning
-    void *data = blk->succs;
-    void *elem_ptr = &succ;
-    blk->succs = qs_dynarr_push(data, &blk->nsucc, elem_ptr);
+    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)), *cur;
+    blk_list->blk = succ;
+    blk_list->next = NULL;
+
+    if (!blk->succs) {
+        blk->succs = blk_list;
+    } else {
+        cur = blk->succs;
+
+        while (cur->next)
+            cur = cur->next;
+        
+        cur->next = blk_list;
+    }
 }
 
 void qs_block_add_pred(qs_ir_block_t *blk, qs_ir_block_t *pred)
 {
-    // avoid incompatible pointer conversion warning
-    void *data = blk->preds;
-    void *elem_ptr = &pred;
-    blk->preds = qs_dynarr_push(data, &blk->npred, elem_ptr);
+    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)), *cur;
+    blk_list->blk = pred;
+    blk_list->next = NULL;
+
+    if (!blk->preds) {
+        blk->preds = blk_list;
+    } else {
+        cur = blk->preds;
+
+        while (cur->next)
+            cur = cur->next;
+        
+        cur->next = blk_list;
+    }
 }
 
 qs_ir_temp_t *qs_new_temp(qs_ir_func_t *f,
@@ -424,8 +463,9 @@ qs_ir_inst_t *qs_new_inst(qs_ir_block_t *blk, qs_ir_op_t op)
     qs_ir_inst_t *inst = qs_arena_alloc(sizeof(qs_ir_inst_t));
     inst->op = op;
     inst->dest = NULL;
-    inst->args = qs_dynarr_init(&inst->narg, 0, sizeof(qs_ir_val_t));
-    inst->blocks = qs_dynarr_init(&inst->nblock, 0, sizeof(qs_ir_block_t *));
+    inst->args = NULL;
+    inst->block1 = NULL;
+    inst->block2 = NULL;
     inst->next = NULL;
 
     // Add to end of list
@@ -443,18 +483,25 @@ qs_ir_inst_t *qs_new_inst(qs_ir_block_t *blk, qs_ir_op_t op)
 
 void qs_inst_add_arg(qs_ir_inst_t *inst, qs_ir_val_t *val)
 {
-    // avoid incompatible pointer conversion warning
-    void *data = inst->args;
-    void *elem_ptr = val;
-    inst->args = qs_dynarr_push(data, &inst->narg, elem_ptr);
+    if (!inst->args) {
+        inst->args = val;
+    } else {
+        qs_ir_val_t *arg = inst->args;
+
+        while (arg->next)
+            arg = arg->next;
+
+        arg->next = val;
+    }
 }
 
 void qs_inst_add_block(qs_ir_inst_t *inst, qs_ir_block_t *blk)
 {
-    // avoid incompatible pointer conversion warning
-    void *data = inst->blocks;
-    void *elem_ptr = &blk;
-    inst->blocks = qs_dynarr_push(data, &inst->nblock, elem_ptr);
+    if (!inst->block1) {
+        inst->block1 = blk;
+    } else {
+        inst->block2 = blk;
+    }
 }
 
 qs_ir_val_t *qs_new_val_temp(qs_ir_type_t ty, qs_ir_temp_t *temp)
@@ -568,10 +615,15 @@ qs_ir_global_t *qs_find_global_sym(qs_ir_module_t *m, char *name)
 
 qs_ir_block_t *qs_find_block(qs_ir_func_t *f, char *name)
 {
-    for (int i = 0; i < f->nblock.len; ++i) {
-        if (strcmp(f->blocks[i].name, name) == 0)
-            return &f->blocks[i];
+    qs_ir_block_t *blk = f->blocks;
+
+    while (blk) {
+        if (!strcmp(blk->name, name))
+            return blk;
+
+        blk = blk->next;
     }
+    
     return NULL;
 }
 
@@ -586,19 +638,29 @@ qs_ir_temp_t *qs_find_temp(qs_ir_func_t *f, char *name)
 
 qs_ir_block_t *qs_block_find_succ(qs_ir_block_t *blk, char *name)
 {
-    for (int i = 0; i < blk->nsucc.len; ++i) {
-        if (strcmp(blk->succs[i]->name, name) == 0)
-            return blk->succs[i];
+    qs_ir_block_list_t *blk_list = blk->succs;
+
+    while (blk_list) {
+        if (!strcmp(blk_list->blk->name, name))
+            return blk_list->blk;
+
+        blk_list = blk_list->next;
     }
+
     return NULL;
 }
 
 qs_ir_block_t *qs_block_find_pred(qs_ir_block_t *blk, char *name)
 {
-    for (int i = 0; i < blk->npred.len; ++i) {
-        if (strcmp(blk->preds[i]->name, name) == 0)
-            return blk->preds[i];
+    qs_ir_block_list_t *blk_list = blk->preds;
+
+    while (blk_list) {
+        if (!strcmp(blk_list->blk->name, name))
+            return blk_list->blk;
+
+        blk_list = blk_list->next;
     }
+
     return NULL;
 }
 
@@ -710,9 +772,11 @@ qs_ir_op_t op_from_ident(char *s)
 void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
 {
     bool has_dest = false;
+    qs_ir_val_kind_t kind;
     char *dest_name;
     qs_ir_type_t type;
     /* phi instruction */
+    /* NOTE: Not used at this moment */
     while (true) {
         if (!qs_peek(QS_TOK_TEMP))
             break;
@@ -757,16 +821,27 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
     /* Instruction */
     while (true) {
         /* optional dest and type */
-        if (!has_dest && qs_peek(QS_TOK_TEMP)) {
-            dest_name = qs_tok.text;
-            qs_next_tok();
-            qs_expect(QS_TOK_EQ);
-            type = qs_parse_type();
-            has_dest = true;
+        if (!has_dest) {
+            if (!has_dest && qs_peek(QS_TOK_TEMP)) {
+                dest_name = qs_tok.text;
+                qs_next_tok();
+                qs_expect(QS_TOK_EQ);
+                type = qs_parse_type();
+                has_dest = true;
+                kind = QS_V_TEMP;
+            } else if (qs_peek(QS_TOK_GLOBAL)) {
+                dest_name = qs_tok.text;
+                qs_next_tok();
+                qs_expect(QS_TOK_EQ);
+                type = qs_parse_type();
+                has_dest = true;
+                kind = QS_V_GLOBAL;
+            }
         }
         if (!has_dest) {
             dest_name = NULL;
             type = QS_TY_NULL;
+            kind = QS_V_CONST;
         }
         /* call */
         if (qs_accept(QS_TOK_KW_CALL)) {
@@ -778,11 +853,27 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
                             0);
 
             if (has_dest) {
-                qs_ir_temp_t *dest = qs_find_temp(func, dest_name);
-                if (!dest)
-                    dest = qs_new_temp(func, dest_name, type, false);
-                qs_ir_val_t *dest_val = qs_new_val_temp(type, dest);
-                call->dest = dest_val;
+                switch (kind) {
+                    case QS_V_CONST:
+                        qs_error_at(qs_tok.line, qs_tok.col, "invalid destination kind: constant", 0);
+                        break;
+                    case QS_V_TEMP: {
+                        qs_ir_temp_t *dest = qs_find_temp(func, dest_name);
+                        if (!dest)
+                            dest = qs_new_temp(func, dest_name, type, false);
+                        qs_ir_val_t *dest_val = qs_new_val_temp(type, dest);
+                        call->dest = dest_val;
+                        break;
+                    }
+                    case QS_V_GLOBAL: {
+                        qs_ir_global_t *dest = qs_find_global_sym(mod, dest_name);
+                        if (!dest)
+                            qs_error_at(qs_tok.line, qs_tok.col, "unknown global symbol", 0);
+                        qs_ir_val_t *dest_val = qs_new_val_global(type, dest);
+                        call->dest = dest_val;
+                        break;
+                    }
+                }
             }
 
             qs_inst_add_arg(call, val);
@@ -893,6 +984,7 @@ void qs_parse_function(qs_ir_module_t *mod)
     qs_ir_func_t *func = qs_new_func(mod, func_name, ret_type, g);
     func->func = add_func(trim_sigil(func_name), false);
     func->blk = add_block(NULL, func->func, NULL);
+    scope_stack[scope_depth++] = func->blk;
     func->func->bbs = bb_create(func->blk);
     func->func->exit = bb_create(func->blk);
 
@@ -929,6 +1021,20 @@ void qs_parse_function(qs_ir_module_t *mod)
             cur_blk = qs_new_block(func, blk_name);
         else if (cur_blk->resolved)
             qs_error_at(qs_tok.line, qs_tok.col, "block redefined", 0);
+
+        // Block scope adjustment
+        if (!strncmp(blk_name, "@L_for_then", 11) ||
+            !strncmp(blk_name, "@L_if_then", 10)) {
+            // Synthesize blocks
+            block_t *prev = scope_stack[scope_depth - 1];
+            scope_stack[scope_depth++] = add_block(prev, func->func, NULL);
+        } else if (!strncmp(blk_name, "@L_for_end", 10) ||
+                   !strncmp(blk_name, "@L_if_end", 9)) {
+            // Destruct synthetic for blocks
+            scope_depth--;
+        }
+
+        cur_blk->bb->scope = scope_stack[scope_depth - 1];
         cur_blk->resolved = true;
 
         if (prev_blk && !qs_has_terminator(prev_blk)) {
@@ -947,6 +1053,8 @@ void qs_parse_function(qs_ir_module_t *mod)
         prev_blk = cur_blk;
     } while (qs_accept(QS_TOK_LABEL));
     qs_expect(QS_TOK_RBRACE);
+
+    scope_depth--;
 }
 
 void qs_parse_dataitem(qs_ir_module_t *mod,
@@ -1073,207 +1181,209 @@ void qs_print_value(qs_ir_val_t *val)
 
 void qs_print_inst(qs_ir_inst_t *in)
 {
+    int i = 0;
+
     printf("    ");
     switch (in->op) {
     case QS_OP_ADD:
         qs_print_value(in->dest);
         printf(" = ADD ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_SUB:
         qs_print_value(in->dest);
         printf(" = SUB ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_MUL:
         qs_print_value(in->dest);
         printf(" = MUL ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_DIV:
         qs_print_value(in->dest);
         printf(" = DIV ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_REM:
         qs_print_value(in->dest);
         printf(" = REM ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_NEG:
         qs_print_value(in->dest);
         printf(" = NEG ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_AND:
         qs_print_value(in->dest);
         printf(" = AND ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_OR:
         qs_print_value(in->dest);
         printf(" = OR ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_XOR:
         qs_print_value(in->dest);
         printf(" = XOR ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_SAR:
         qs_print_value(in->dest);
         printf(" = SAR ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_SHR:
         qs_print_value(in->dest);
         printf(" = SHR ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_SHL:
         qs_print_value(in->dest);
         printf(" = SHL ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_ADDR:
         qs_print_value(in->dest);
         printf(" = ADDR ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_LOADB:
         qs_print_value(in->dest);
         printf(" = LOADB ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_LOADW:
         qs_print_value(in->dest);
         printf(" = LOADW ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_STOREB:
         printf("STOREB ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_STOREW:
         printf("STOREW ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_BLITS:
         printf("BLITS ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf(" ");
-        qs_print_value(&in->args[2]);
+        qs_print_value(in->args->next->next);
         printf("\n");
         break;
     case QS_OP_ALLOC:
         qs_print_value(in->dest);
         printf(" = ALLOC ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_CEQ:
         qs_print_value(in->dest);
         printf(" = CEQ ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_CNE:
         qs_print_value(in->dest);
         printf(" = CNE ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_CLT:
         qs_print_value(in->dest);
         printf(" = CLT ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_CLE:
         qs_print_value(in->dest);
         printf(" = CLE ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_CGT:
         qs_print_value(in->dest);
         printf(" = CGT ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_CGE:
         qs_print_value(in->dest);
         printf(" = CGE ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf(" ");
-        qs_print_value(&in->args[1]);
+        qs_print_value(in->args->next);
         printf("\n");
         break;
     case QS_OP_EXTSB:
         qs_print_value(in->dest);
         printf(" = EXTSB ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_COPY:
         qs_print_value(in->dest);
         printf(" = COPY ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_CALL:
@@ -1282,38 +1392,40 @@ void qs_print_inst(qs_ir_inst_t *in)
             printf(" = ");
         }
         printf("CALL ");
-        qs_print_value(&in->args[0]);
+        qs_print_value(in->args);
         printf("(");
-        for (int i = 1; i < in->narg.len; ++i) {
+        for (qs_ir_val_t *arg = in->args->next; arg; arg = arg->next) {
             if (i > 1)
                 printf(", ");
-            qs_print_value(&in->args[i]);
+            qs_print_value(arg);
+            i++;
         }
         printf(")\n");
         break;
     case QS_OP_PHI:
         qs_print_value(in->dest);
         printf(" = PHI ");
-        for (int i = 0; i < in->narg.len; ++i) {
-            if (i)
+        for (qs_ir_val_t *arg = in->args; arg; arg = arg->next) {
+            if (i > 1)
                 printf(", ");
-            printf("%s ", in->blocks[i]->name);
-            qs_print_value(&in->args[i]);
+            // printf("%s ", in->blocks[i]->name);
+            qs_print_value(arg);
+            i++;
         }
         printf("\n");
         break;
     case QS_OP_JMP:
-        printf("JMP %s\n", in->blocks[0]->name);
+        printf("JMP %s\n", in->block1->name);
         break;
     case QS_OP_JNZ:
         printf("JNZ ");
-        qs_print_value(&in->args[0]);
-        printf(", %s, %s\n", in->blocks[0]->name, in->blocks[1]->name);
+        qs_print_value(in->args);
+        printf(", %s, %s\n", in->block1->name, in->block2->name);
         break;
     case QS_OP_RET:
         printf("RET ");
-        if (&in->args[0])
-            qs_print_value(&in->args[0]);
+        if (in->args)
+            qs_print_value(in->args);
         printf("\n");
         break;
     case QS_OP_HLT:
@@ -1344,9 +1456,12 @@ void qs_print_func(qs_ir_func_t *func)
     if (func->variadic)
         printf(", ...");
     printf(") {\n");
-    for (int i = 0; i < func->nblock.len; ++i) {
-        printf("BLOCK %s:\n", func->blocks[i].name);
-        qs_print_block(&func->blocks[i]);
+    qs_ir_block_t *blk = func->blocks;
+    while (blk) {
+        printf("BLOCK %s:\n", blk->name);
+        qs_print_block(blk);
+
+        blk = blk->next;
     }
     printf("}\n");
 }

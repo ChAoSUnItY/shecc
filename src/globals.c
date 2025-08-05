@@ -1085,6 +1085,10 @@ void dump_bb_insn(func_t *func, basic_block_t *bb, bool *at_func_start)
         rs2 = insn->rs2;
 
         switch (insn->opcode) {
+        case OP_phi:
+            print_indent(1);
+            printf("phi %s, %s, %s", rd->var_name, rs1->var_name, rs2->var_name);
+            break;
         case OP_unwound_phi:
             /* Ignored */
             continue;

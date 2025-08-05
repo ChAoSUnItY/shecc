@@ -1541,34 +1541,34 @@ void optimize(void)
     build_reversed_rpo();
     build_r_idom();
     build_rdom();
-    build_rdf();
+    // build_rdf();
 
-    use_chain_build();
+    // use_chain_build();
 
-    for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        /* basic block level (control flow) optimizations */
+    // for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+    //     /* basic block level (control flow) optimizations */
 
-        for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
-            /* instruction level optimizations */
-            for (insn_t *insn = bb->insn_list.head; insn; insn = insn->next) {
-                /* record the instruction assigned value to rd */
-                if (insn->rd)
-                    insn->rd->last_assign = insn;
-                if (cse(insn, bb))
-                    continue;
-                if (const_folding(insn))
-                    continue;
-                /* more optimizations */
-            }
-        }
-    }
+    //     for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
+    //         /* instruction level optimizations */
+    //         for (insn_t *insn = bb->insn_list.head; insn; insn = insn->next) {
+    //             /* record the instruction assigned value to rd */
+    //             if (insn->rd)
+    //                 insn->rd->last_assign = insn;
+    //             if (cse(insn, bb))
+    //                 continue;
+    //             if (const_folding(insn))
+    //                 continue;
+    //             /* more optimizations */
+    //         }
+    //     }
+    // }
 
-    for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
-            dce_insn(bb);
-        }
-    }
-    dce_sweep();
+    // for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+    //     for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
+    //         dce_insn(bb);
+    //     }
+    // }
+    // dce_sweep();
 }
 
 void bb_index_reversed_rpo(func_t *func, basic_block_t *bb)
