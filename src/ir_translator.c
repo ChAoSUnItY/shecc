@@ -215,8 +215,11 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
 
         add_insn(blk, bb, OP_write, NULL, rs1, rs2, sz, NULL);
         break;
-    case QS_OP_ALLOC:
-        if (find_local_var(trim_sigil(inst->dest->temp->name), blk)) {
+    case QS_OP_ALLOC: {
+        char *temp_name = trim_sigil(inst->dest->temp->name);
+
+        if (find_local_var(temp_name, blk)) {
+            printf("[INFO]: Shadowing temp variable \"%s\" in function \"%s\" \n", trim_sigil(inst->dest->temp->name), blk->func->return_def.var_name);
             fatal("ALLOC: Attempt to shadow temp variable via alloc");
         }
 
@@ -229,7 +232,7 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         }
 
         dest = require_var(blk);
-        strcpy(dest->var_name, trim_sigil(inst->dest->temp->name));
+        strcpy(dest->var_name, temp_name);
 
         if (rs1_val->ival == 1) {
             dest->type = TY_char;
@@ -243,6 +246,7 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_allocat, dest, NULL, NULL, 0, NULL);
         add_symbol(bb, dest);
         break;
+    }
     case QS_OP_COPY:
         dest = qs_gen_dest(inst->dest, bb, blk);
         rs1 = qs_gen_value(rs1_val, bb, blk);

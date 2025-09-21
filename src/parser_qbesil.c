@@ -1023,14 +1023,26 @@ void qs_parse_function(qs_ir_module_t *mod)
             qs_error_at(qs_tok.line, qs_tok.col, "block redefined", 0);
 
         // Block scope adjustment
-        if (!strncmp(blk_name, "@L_for_then", 11) ||
+        if (!strncmp(blk_name, "@L_for_init", 11) ||
+            !strncmp(blk_name, "@L_for_begin", 12) ||
+            !strncmp(blk_name, "@L_for_then", 11) ||
+            !strncmp(blk_name, "@L_do_then", 10) ||
             !strncmp(blk_name, "@L_if_then", 10)) {
             // Synthesize blocks
             block_t *prev = scope_stack[scope_depth - 1];
             scope_stack[scope_depth++] = add_block(prev, func->func, NULL);
-        } else if (!strncmp(blk_name, "@L_for_end", 10) ||
+        } else if (!strncmp(blk_name, "@L_if_else", 10)) {
+            // Destruct previous if-then scope
+            scope_depth--;
+            // Synthesize if-else scope
+            block_t *prev = scope_stack[scope_depth - 1];
+            scope_stack[scope_depth++] = add_block(prev, func->func, NULL);
+        } else if (!strncmp(blk_name, "@L_for_end", 10)) {
+            // Destruct synthetic init block and body block
+            scope_depth -= 3;
+        } else if (!strncmp(blk_name, "@L_do_end", 9) ||
                    !strncmp(blk_name, "@L_if_end", 9)) {
-            // Destruct synthetic for blocks
+            // Destruct synthetic blocks
             scope_depth--;
         }
 
