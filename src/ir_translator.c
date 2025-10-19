@@ -128,11 +128,20 @@ var_t *qs_gen_value(qs_ir_val_t *val, basic_block_t *bb, block_t *blk)
         var->init_val = val->ival;
         add_insn(blk, bb, OP_load_constant, var, NULL, NULL, 0, NULL);
         return var;
-    case QS_V_GLOBAL:
+    case QS_V_GLOBAL: {
         var = find_global_var(name);
-        if (!var)
-            fatal("Unable to find global");
-        return var;
+        if (var)
+            return var;
+        func_t *func = find_func(name);
+        if (func) {
+            var = require_var(blk);
+            var->is_func = true;
+            strcpy(var->var_name, name);
+            return var;
+        }
+        fatal("Unable to find global (or function)");
+        break;
+    }
     case QS_V_TEMP:
         var = find_local_var(name, blk);
         if (!var) {
@@ -186,7 +195,7 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_negate, dest, rs1, NULL, 0, NULL);
         break;
     case QS_OP_SAR:
-        printf("[WARN]: SAR: Opcode not supported, fallback to SHR\n");
+        /* printf("[WARN]: SAR: Opcode not supported, fallback to SHR\n"); */
         dest = qs_gen_dest(inst->dest, bb, blk);
         rs1 = qs_gen_value(rs1_val, bb, blk);
         rs2 = qs_gen_value(rs2_val, bb, blk);
@@ -205,7 +214,15 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         rs1 = qs_gen_value(rs1_val, bb, blk);
         sz = inst->op == QS_OP_LOADB ? 1 : 4;
 
-        add_insn(blk, bb, OP_read, dest, rs1, NULL, sz, NULL);
+        if (rs1->is_func) {
+            var_t *temp_func_var = require_var(blk);
+            gen_name_to(temp_func_var->var_name);
+            add_insn(blk, bb, OP_address_of, temp_func_var, dest, NULL, 0, NULL);
+            add_insn(blk, bb, OP_write, NULL, temp_func_var, rs1, sz, NULL);
+            printf("TEMP: %s\n", temp_func_var->var_name);
+        } else {
+            add_insn(blk, bb, OP_read, dest, rs1, NULL, sz, NULL);
+        }
         break;
     case QS_OP_STOREB:
     case QS_OP_STOREW:
@@ -257,18 +274,21 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         int len = 0;
         var_t *args[MAX_PARAMS];
         qs_ir_val_t *arg = inst->args->next;
+        char *name = rs1_val->kind == QS_V_GLOBAL ? trim_sigil(rs1_val->global->name) : trim_sigil(rs1_val->temp->name);
+        bool is_fn_ptr = !find_func(name);
 
         for (int i = 0; arg; arg = arg->next) {
             args[i] = qs_gen_value(arg, bb, blk);
             i++;
             len++;
         }
+        
+        var_t *indirect_fn_ptr = is_fn_ptr ? qs_gen_value(rs1_val, bb, blk) : NULL;
 
         for (int i = 0; i < len; i++)
             add_insn(blk, bb, OP_push, NULL, args[i], NULL, len - i - 1, NULL);
 
-        add_insn(blk, bb, OP_call, NULL, NULL, NULL, 0,
-                 trim_sigil(rs1_val->global->name));
+        add_insn(blk, bb, is_fn_ptr ? OP_indirect : OP_call, NULL, indirect_fn_ptr, NULL, 0, is_fn_ptr ? NULL : name);
 
         if (inst->dest) {
             dest = qs_gen_dest(inst->dest, bb, blk);
@@ -297,6 +317,12 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
     default:
         fatal("Unknown opcode");
         break;
+    }
+
+    // HACK: Mark short circuited result as logical_ret
+    if (!strncmp(bb->bb_label_name, "@L_and_shared", 13) ||
+        !strncmp(bb->bb_label_name, "@L_or_shared", 12)) {
+        dest->is_logical_ret = true;
     }
 }
 

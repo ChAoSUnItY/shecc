@@ -747,11 +747,10 @@ void bb_solve_phi_params(basic_block_t *bb)
         if (insn->opcode == OP_phi)
             new_name(bb->scope, &insn->rd);
         else {
-            if (insn->rs1)
+            if (insn->rs1 && !insn->rs1->is_func)
                 rename_var(&insn->rs1);
-            if (insn->rs2)
-                if (!insn->rs2->is_func)
-                    rename_var(&insn->rs2);
+            if (insn->rs2 && !insn->rs2->is_func)
+                rename_var(&insn->rs2);
             if (insn->rd)
                 new_name(bb->scope, &insn->rd);
         }

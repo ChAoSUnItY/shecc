@@ -848,9 +848,8 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
             qs_ir_inst_t *call = qs_new_inst(blk, QS_OP_CALL);
             // assuming func pointer word-sized
             qs_ir_val_t *val = qs_parse_value(mod, func, QS_TY_WORD);
-            if (val->kind != QS_V_GLOBAL)
-                qs_error_at(qs_tok.line, qs_tok.col, "expected global symbol",
-                            0);
+            if (val->kind != QS_V_TEMP && val->kind != QS_V_GLOBAL)
+                qs_error_at(qs_tok.line, qs_tok.col, "expected global symbol or temp", 0);
 
             if (has_dest) {
                 switch (kind) {
