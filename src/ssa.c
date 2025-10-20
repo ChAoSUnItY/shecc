@@ -11,64 +11,142 @@
 #include "defs.h"
 #include "globals.c"
 
+typedef enum {
+    ACTION_NONE = 0,
+    ACTION_POST_INDEX_RPO,
+    ACTION_POST_REVERSE_INDEX,
+    ACTION_POST_BUILD_RPO,
+    ACTION_POST_BUILD_DF,
+    ACTION_PRE_BUILD_DOM,
+    ACTION_PRE_SOLVE_GLOBALS,
+    ACTION_PRE_UNWIND_PHI,
+    ACTION_PRE_RESET_LIVE_KILL_IDX,
+    ACTION_PRE_SOLVE_LOCALS,
+    ACTION_POST_INDEX_REVERSED_RPO,
+    ACTION_POST_REVERSE_REVERSED_INDEX,
+    ACTION_POST_BUILD_REVERSED_RPO,
+    ACTION_POST_BUILD_RDF,
+    ACTION_PRE_BUILD_RDOM
+} bb_action_t;
+
+void bb_index_rpo(func_t *func, basic_block_t *bb);
+void bb_reverse_index(func_t *func, basic_block_t *bb);
+void bb_build_rpo(func_t *func, basic_block_t *bb);
+void bb_build_dom(func_t *func, basic_block_t *bb);
+void bb_build_df(func_t *func, basic_block_t *bb);
+void bb_build_rdom(func_t *func, basic_block_t *bb);
+void bb_build_rdf(func_t *func, basic_block_t *bb);
+void bb_solve_globals(func_t *func, basic_block_t *bb);
+void bb_unwind_phi(func_t *func, basic_block_t *bb);
+void bb_index_reversed_rpo(func_t *func, basic_block_t *bb);
+void bb_reverse_reversed_index(func_t *func, basic_block_t *bb);
+void bb_build_reversed_rpo(func_t *func, basic_block_t *bb);
+void bb_reset_live_kill_idx(func_t *func, basic_block_t *bb);
+void bb_solve_locals(func_t *func, basic_block_t *bb);
+
 /* cfront does not accept structure as an argument, pass pointer */
-void bb_forward_traversal(bb_traversal_args_t *args)
+void bb_forward_traverse(func_t *func,
+                         basic_block_t *bb,
+                         bb_action_t action,
+                         bool do_pre,
+                         bool do_post)
 {
-    args->bb->visited++;
+    bb->visited++;
 
-    if (args->preorder_cb)
-        args->preorder_cb(args->func, args->bb);
-
-    /* 'args' is a reference, do not modify it */
-    bb_traversal_args_t next_args;
-    memcpy(&next_args, args, sizeof(bb_traversal_args_t));
-
-    if (args->bb->next) {
-        if (args->bb->next->visited < args->func->visited) {
-            next_args.bb = args->bb->next;
-            bb_forward_traversal(&next_args);
-        }
-    }
-    if (args->bb->then_) {
-        if (args->bb->then_->visited < args->func->visited) {
-            next_args.bb = args->bb->then_;
-            bb_forward_traversal(&next_args);
-        }
-    }
-    if (args->bb->else_) {
-        if (args->bb->else_->visited < args->func->visited) {
-            next_args.bb = args->bb->else_;
-            bb_forward_traversal(&next_args);
+    if (do_pre) {
+        switch (action) {
+        case ACTION_PRE_BUILD_DOM:
+            bb_build_dom(func, bb);
+            break;
+        case ACTION_PRE_SOLVE_GLOBALS:
+            bb_solve_globals(func, bb);
+            break;
+        case ACTION_PRE_UNWIND_PHI:
+            bb_unwind_phi(func, bb);
+            break;
+        case ACTION_PRE_RESET_LIVE_KILL_IDX:
+            bb_reset_live_kill_idx(func, bb);
+            break;
+        case ACTION_PRE_SOLVE_LOCALS:
+            bb_solve_locals(func, bb);
+            break;
+        default:
+            break;
         }
     }
 
-    if (args->postorder_cb)
-        args->postorder_cb(args->func, args->bb);
+    if (bb->next && bb->next->visited < func->visited)
+        bb_forward_traverse(func, bb->next, action, do_pre, do_post);
+    if (bb->then_ && bb->then_->visited < func->visited)
+        bb_forward_traverse(func, bb->then_, action, do_pre, do_post);
+    if (bb->else_ && bb->else_->visited < func->visited)
+        bb_forward_traverse(func, bb->else_, action, do_pre, do_post);
+
+    if (do_post) {
+        switch (action) {
+        case ACTION_POST_INDEX_RPO:
+            bb_index_rpo(func, bb);
+            break;
+        case ACTION_POST_REVERSE_INDEX:
+            bb_reverse_index(func, bb);
+            break;
+        case ACTION_POST_BUILD_RPO:
+            bb_build_rpo(func, bb);
+            break;
+        case ACTION_POST_BUILD_DF:
+            bb_build_df(func, bb);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 /* cfront does not accept structure as an argument, pass pointer */
-void bb_backward_traversal(bb_traversal_args_t *args)
+void bb_backward_traverse(func_t *func,
+                          basic_block_t *bb,
+                          bb_action_t action,
+                          int do_pre,
+                          int do_post)
 {
-    args->bb->visited++;
+    bb->visited++;
 
-    if (args->preorder_cb)
-        args->preorder_cb(args->func, args->bb);
-
-    for (int i = 0; i < MAX_BB_PRED; i++) {
-        if (!args->bb->prev[i].bb)
-            continue;
-        if (args->bb->prev[i].bb->visited < args->func->visited) {
-            /* 'args' is a reference, do not modify it */
-            bb_traversal_args_t next_args;
-            memcpy(&next_args, args, sizeof(bb_traversal_args_t));
-
-            next_args.bb = args->bb->prev[i].bb;
-            bb_backward_traversal(&next_args);
+    if (do_pre) {
+        switch (action) {
+        case ACTION_PRE_BUILD_RDOM:
+            bb_build_rdom(func, bb);
+            break;
+        default:
+            /* currently no other backward pre actions used */
+            break;
         }
     }
 
-    if (args->postorder_cb)
-        args->postorder_cb(args->func, args->bb);
+    for (int i = 0; i < MAX_BB_PRED; i++) {
+        if (!bb->prev[i].bb)
+            continue;
+        if (bb->prev[i].bb->visited < func->visited)
+            bb_backward_traverse(func, bb->prev[i].bb, action, do_pre, do_post);
+    }
+
+    if (do_post) {
+        switch (action) {
+        case ACTION_POST_INDEX_REVERSED_RPO:
+            bb_index_reversed_rpo(func, bb);
+            break;
+        case ACTION_POST_REVERSE_REVERSED_INDEX:
+            bb_reverse_reversed_index(func, bb);
+            break;
+        case ACTION_POST_BUILD_REVERSED_RPO:
+            bb_build_reversed_rpo(func, bb);
+            break;
+        case ACTION_POST_BUILD_RDF:
+            bb_build_rdf(func, bb);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 void bb_index_rpo(func_t *func, basic_block_t *bb)
@@ -104,24 +182,16 @@ void bb_build_rpo(func_t *func, basic_block_t *bb)
 
 void build_rpo(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
+        func->visited++;
+        bb_forward_traverse(func, func->bbs, ACTION_POST_INDEX_RPO, 0, 1);
 
         func->visited++;
-        args->postorder_cb = bb_index_rpo;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_POST_REVERSE_INDEX, 0, 1);
 
         func->visited++;
-        args->postorder_cb = bb_reverse_index;
-        bb_forward_traversal(args);
-
-        func->visited++;
-        args->postorder_cb = bb_build_rpo;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_POST_BUILD_RPO, 0, 1);
     }
-    free(args);
 }
 
 basic_block_t *intersect(basic_block_t *i, basic_block_t *j)
@@ -221,16 +291,10 @@ void bb_build_dom(func_t *func, basic_block_t *bb)
 
 void build_dom(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
-
         func->visited++;
-        args->preorder_cb = bb_build_dom;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_PRE_BUILD_DOM, 1, 0);
     }
-    free(args);
 }
 
 void bb_build_df(func_t *func, basic_block_t *bb)
@@ -256,16 +320,10 @@ void bb_build_df(func_t *func, basic_block_t *bb)
 
 void build_df(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
-
         func->visited++;
-        args->postorder_cb = bb_build_df;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_POST_BUILD_DF, 0, 1);
     }
-    free(args);
 }
 
 basic_block_t *reverse_intersect(basic_block_t *i, basic_block_t *j)
@@ -351,16 +409,12 @@ void bb_build_rdom(func_t *func, basic_block_t *bb)
 
 void build_rdom(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->exit;
-
         func->visited++;
-        args->preorder_cb = bb_build_rdom;
-        bb_backward_traversal(args);
+        /* traverse backwards from exit and invoke bb_build_rdom as preorder
+         * action */
+        bb_backward_traverse(func, func->exit, ACTION_PRE_BUILD_RDOM, 1, 0);
     }
-    free(args);
 }
 
 void bb_build_rdf(func_t *func, basic_block_t *bb)
@@ -396,16 +450,10 @@ void bb_build_rdf(func_t *func, basic_block_t *bb)
 
 void build_rdf(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->exit;
-
         func->visited++;
-        args->postorder_cb = bb_build_rdf;
-        bb_backward_traversal(args);
+        bb_backward_traverse(func, func->exit, ACTION_POST_BUILD_RDF, 0, 1);
     }
-    free(args);
 }
 
 void use_chain_add_tail(insn_t *i, var_t *var)
@@ -549,16 +597,10 @@ void bb_solve_globals(func_t *func, basic_block_t *bb)
 
 void solve_globals(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
-
         func->visited++;
-        args->postorder_cb = bb_solve_globals;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_PRE_SOLVE_GLOBALS, 1, 0);
     }
-    free(args);
 }
 
 bool var_check_in_scope(var_t *var, block_t *block)
@@ -867,16 +909,10 @@ void bb_unwind_phi(func_t *func, basic_block_t *bb)
 
 void unwind_phi(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
-
         func->visited++;
-        args->preorder_cb = bb_unwind_phi;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_PRE_UNWIND_PHI, 1, 0);
     }
-    free(args);
 }
 
 #ifdef __SHECC__
@@ -1603,25 +1639,21 @@ void bb_build_reversed_rpo(func_t *func, basic_block_t *bb)
 
 void build_reversed_rpo(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         func->bb_cnt = 0;
-        args->func = func;
-        args->bb = func->exit;
 
         func->visited++;
-        args->postorder_cb = bb_index_reversed_rpo;
-        bb_backward_traversal(args);
+        bb_backward_traverse(func, func->exit, ACTION_POST_INDEX_REVERSED_RPO,
+                             0, 1);
 
         func->visited++;
-        args->postorder_cb = bb_reverse_reversed_index;
-        bb_backward_traversal(args);
+        bb_backward_traverse(func, func->exit,
+                             ACTION_POST_REVERSE_REVERSED_INDEX, 0, 1);
 
         func->visited++;
-        args->postorder_cb = bb_build_reversed_rpo;
-        bb_backward_traversal(args);
+        bb_backward_traverse(func, func->exit, ACTION_POST_BUILD_REVERSED_RPO,
+                             0, 1);
     }
-    free(args);
 }
 
 void bb_reset_live_kill_idx(func_t *func, basic_block_t *bb)
@@ -1753,23 +1785,17 @@ bool recompute_live_out(basic_block_t *bb)
 
 void liveness_analysis(void)
 {
-    bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
-        args->func = func;
-        args->bb = func->bbs;
-
         func->visited++;
-        args->preorder_cb = bb_reset_live_kill_idx;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_PRE_RESET_LIVE_KILL_IDX, 1,
+                            0);
 
         for (int i = 0; i < func->num_params; i++)
             bb_add_killed_var(func->bbs, func->param_defs[i].subscripts[0]);
 
         func->visited++;
-        args->preorder_cb = bb_solve_locals;
-        bb_forward_traversal(args);
+        bb_forward_traverse(func, func->bbs, ACTION_PRE_SOLVE_LOCALS, 1, 0);
     }
-    free(args);
 
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         basic_block_t *bb = func->exit;

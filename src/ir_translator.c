@@ -217,7 +217,8 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         if (rs1->is_func) {
             var_t *temp_func_var = require_var(blk);
             gen_name_to(temp_func_var->var_name);
-            add_insn(blk, bb, OP_address_of, temp_func_var, dest, NULL, 0, NULL);
+            add_insn(blk, bb, OP_address_of, temp_func_var, dest, NULL, 0,
+                     NULL);
             add_insn(blk, bb, OP_write, NULL, temp_func_var, rs1, sz, NULL);
             printf("TEMP: %s\n", temp_func_var->var_name);
         } else {
@@ -236,7 +237,10 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         char *temp_name = trim_sigil(inst->dest->temp->name);
 
         if (find_local_var(temp_name, blk)) {
-            printf("[INFO]: Shadowing temp variable \"%s\" in function \"%s\" \n", trim_sigil(inst->dest->temp->name), blk->func->return_def.var_name);
+            printf(
+                "[INFO]: Shadowing temp variable \"%s\" in function \"%s\" \n",
+                trim_sigil(inst->dest->temp->name),
+                blk->func->return_def.var_name);
             fatal("ALLOC: Attempt to shadow temp variable via alloc");
         }
 
@@ -274,7 +278,9 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         int len = 0;
         var_t *args[MAX_PARAMS];
         qs_ir_val_t *arg = inst->args->next;
-        char *name = rs1_val->kind == QS_V_GLOBAL ? trim_sigil(rs1_val->global->name) : trim_sigil(rs1_val->temp->name);
+        char *name = rs1_val->kind == QS_V_GLOBAL
+                         ? trim_sigil(rs1_val->global->name)
+                         : trim_sigil(rs1_val->temp->name);
         bool is_fn_ptr = !find_func(name);
 
         for (int i = 0; arg; arg = arg->next) {
@@ -282,13 +288,15 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
             i++;
             len++;
         }
-        
-        var_t *indirect_fn_ptr = is_fn_ptr ? qs_gen_value(rs1_val, bb, blk) : NULL;
+
+        var_t *indirect_fn_ptr =
+            is_fn_ptr ? qs_gen_value(rs1_val, bb, blk) : NULL;
 
         for (int i = 0; i < len; i++)
             add_insn(blk, bb, OP_push, NULL, args[i], NULL, len - i - 1, NULL);
 
-        add_insn(blk, bb, is_fn_ptr ? OP_indirect : OP_call, NULL, indirect_fn_ptr, NULL, 0, is_fn_ptr ? NULL : name);
+        add_insn(blk, bb, is_fn_ptr ? OP_indirect : OP_call, NULL,
+                 indirect_fn_ptr, NULL, 0, is_fn_ptr ? NULL : name);
 
         if (inst->dest) {
             dest = qs_gen_dest(inst->dest, bb, blk);
@@ -348,6 +356,10 @@ void qs_gen_func(qs_ir_func_t *ir_func, char *name)
         init_var(&func->param_defs[j]);
         strcpy(func->param_defs[j].var_name, trim_sigil(temp->name));
         func->param_defs[j].type = qs_convert_type(temp->type);
+
+        add_symbol(func->bbs, &func->param_defs[j]);
+        func->param_defs[j].base = &func->param_defs[j];
+        var_add_killed_bb(&func->param_defs[j], func->bbs);
     }
 
     func->va_args = ir_func->variadic;
@@ -414,19 +426,22 @@ void qs_gen_data(qs_ir_data_t *ir_data, char *name)
         // gen_name_to(vd->var_name);
         // vd->init_val = 0;
 
-        // add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL, NULL, 0, NULL);
-        // add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd, NULL, 0, NULL);
+        // add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL,
+        // NULL, 0, NULL); add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign,
+        // global_var, vd, NULL, 0, NULL);
         break;
     }
     case QS_DI_CONST: {
         global_var->type = qs_convert_type(data_item->type);
-        
+
         var_t *vd = require_typed_var(GLOBAL_BLOCK, TY_int);
         gen_name_to(vd->var_name);
         vd->init_val = data_item->ival;
 
-        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL, NULL, 0, NULL);
-        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd, NULL, 0, NULL);
+        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_load_constant, vd, NULL,
+                 NULL, 0, NULL);
+        add_insn(GLOBAL_BLOCK, GLOBAL_FUNC->bbs, OP_assign, global_var, vd,
+                 NULL, 0, NULL);
         break;
     }
     default:

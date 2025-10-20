@@ -768,9 +768,10 @@ basic_block_t *bb_create(block_t *parent)
 
     if (dump_ir) {
         if (!qbe_sil || strlen(bb->bb_label_name) == 0)
-            snprintf(bb->bb_label_name, MAX_VAR_LEN, ".label.%d", bb_label_idx++);
+            snprintf(bb->bb_label_name, MAX_VAR_LEN, ".label.%d",
+                     bb_label_idx++);
     }
-    
+
     return bb;
 }
 
@@ -1087,7 +1088,8 @@ void dump_bb_insn(func_t *func, basic_block_t *bb, bool *at_func_start)
         switch (insn->opcode) {
         case OP_phi:
             print_indent(1);
-            printf("phi %s, %s, %s", rd->var_name, rs1->var_name, rs2->var_name);
+            printf("phi %s, %s, %s", rd->var_name, rs1->var_name,
+                   rs2->var_name);
             break;
         case OP_unwound_phi:
             /* Ignored */

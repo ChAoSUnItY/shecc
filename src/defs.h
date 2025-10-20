@@ -14,7 +14,7 @@
 #define MAX_TOKEN_LEN 256
 #define MAX_ID_LEN 64
 #define MAX_LINE_LEN 256
-#define MAX_VAR_LEN 32
+#define MAX_VAR_LEN 64
 #define MAX_TYPE_LEN 32
 #define MAX_PARAMS 8
 #define MAX_LOCALS 1600

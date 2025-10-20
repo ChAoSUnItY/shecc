@@ -144,7 +144,7 @@ struct qs_ir_val {
 struct qs_ir_inst {
     qs_ir_op_t op;
     qs_ir_val_t *dest;
-    
+
     // Array of arguments
     qs_ir_val_t *args;
 
@@ -366,7 +366,8 @@ qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
     blk->resolved = false;
     blk->next = NULL;
     blk->ins = NULL;
-    blk->bb = bb_create(scope_stack[scope_depth - 1]); // Later adjusted by block resolution
+    blk->bb = bb_create(
+        scope_stack[scope_depth - 1]);  // Later adjusted by block resolution
     strcpy(blk->bb->bb_label_name, name);
 
     if (!f->blocks) {
@@ -385,7 +386,8 @@ qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
 
 void qs_block_add_succ(qs_ir_block_t *blk, qs_ir_block_t *succ)
 {
-    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)), *cur;
+    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)),
+                       *cur;
     blk_list->blk = succ;
     blk_list->next = NULL;
 
@@ -396,14 +398,15 @@ void qs_block_add_succ(qs_ir_block_t *blk, qs_ir_block_t *succ)
 
         while (cur->next)
             cur = cur->next;
-        
+
         cur->next = blk_list;
     }
 }
 
 void qs_block_add_pred(qs_ir_block_t *blk, qs_ir_block_t *pred)
 {
-    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)), *cur;
+    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)),
+                       *cur;
     blk_list->blk = pred;
     blk_list->next = NULL;
 
@@ -414,7 +417,7 @@ void qs_block_add_pred(qs_ir_block_t *blk, qs_ir_block_t *pred)
 
         while (cur->next)
             cur = cur->next;
-        
+
         cur->next = blk_list;
     }
 }
@@ -623,7 +626,7 @@ qs_ir_block_t *qs_find_block(qs_ir_func_t *f, char *name)
 
         blk = blk->next;
     }
-    
+
     return NULL;
 }
 
@@ -849,29 +852,32 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
             // assuming func pointer word-sized
             qs_ir_val_t *val = qs_parse_value(mod, func, QS_TY_WORD);
             if (val->kind != QS_V_TEMP && val->kind != QS_V_GLOBAL)
-                qs_error_at(qs_tok.line, qs_tok.col, "expected global symbol or temp", 0);
+                qs_error_at(qs_tok.line, qs_tok.col,
+                            "expected global symbol or temp", 0);
 
             if (has_dest) {
                 switch (kind) {
-                    case QS_V_CONST:
-                        qs_error_at(qs_tok.line, qs_tok.col, "invalid destination kind: constant", 0);
-                        break;
-                    case QS_V_TEMP: {
-                        qs_ir_temp_t *dest = qs_find_temp(func, dest_name);
-                        if (!dest)
-                            dest = qs_new_temp(func, dest_name, type, false);
-                        qs_ir_val_t *dest_val = qs_new_val_temp(type, dest);
-                        call->dest = dest_val;
-                        break;
-                    }
-                    case QS_V_GLOBAL: {
-                        qs_ir_global_t *dest = qs_find_global_sym(mod, dest_name);
-                        if (!dest)
-                            qs_error_at(qs_tok.line, qs_tok.col, "unknown global symbol", 0);
-                        qs_ir_val_t *dest_val = qs_new_val_global(type, dest);
-                        call->dest = dest_val;
-                        break;
-                    }
+                case QS_V_CONST:
+                    qs_error_at(qs_tok.line, qs_tok.col,
+                                "invalid destination kind: constant", 0);
+                    break;
+                case QS_V_TEMP: {
+                    qs_ir_temp_t *dest = qs_find_temp(func, dest_name);
+                    if (!dest)
+                        dest = qs_new_temp(func, dest_name, type, false);
+                    qs_ir_val_t *dest_val = qs_new_val_temp(type, dest);
+                    call->dest = dest_val;
+                    break;
+                }
+                case QS_V_GLOBAL: {
+                    qs_ir_global_t *dest = qs_find_global_sym(mod, dest_name);
+                    if (!dest)
+                        qs_error_at(qs_tok.line, qs_tok.col,
+                                    "unknown global symbol", 0);
+                    qs_ir_val_t *dest_val = qs_new_val_global(type, dest);
+                    call->dest = dest_val;
+                    break;
+                }
                 }
             }
 
