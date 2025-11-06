@@ -16,6 +16,11 @@
 #define INT_MAX 0x7fffffff
 #define INT_MIN 0x80000000
 
+// HACK
+#define __arm__ 1
+
+int __syscall(int nr, ...);
+
 #if defined(__arm__)
 #define __SIZEOF_POINTER__ 4
 #define __syscall_exit 1

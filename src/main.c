@@ -5,10 +5,14 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
+#ifdef QBE_SIL
+#include "../lib/c.c"
+#else
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 /* Define target machine */
 #include "../config"
@@ -27,9 +31,6 @@
 
 /* C language syntactic analyzer */
 #include "parser.c"
-
-/* QBE SIL arena allocator */
-#include "arena_qbesil.c"
 
 /* QBE SIL lexical analyzer */
 #include "lexer_qbesil.c"
@@ -137,7 +138,8 @@ int main(int argc, char *argv[])
     elf_generate(out);
 
     /* release allocated objects */
-    global_release();
+    /* global_release(); */
 
     exit(0);
+    return 0;
 }

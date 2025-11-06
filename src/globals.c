@@ -6,10 +6,12 @@
  */
 
 #pragma once
+#ifndef QBE_SIL
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 #include "defs.h"
 
@@ -58,6 +60,9 @@ arena_t *BLOCK_ARENA;
 
 /* BB_ARENA is responsible for basic_block_t / ph2_ir_t allocation */
 arena_t *BB_ARENA;
+
+/* QBE_SIL_ARENA is responisble for all kind of QBE SIL related allocation */
+arena_t *QBE_SIL_ARENA;
 
 int bb_label_idx = 0;
 
@@ -168,6 +173,19 @@ void *arena_alloc(arena_t *arena, int size)
     ptr = new_block->memory + new_block->offset;
     new_block->offset += size;
     return ptr;
+}
+
+char *arena_strdup_with_len(arena_t *arena, char *str, int len)
+{
+    char *new_str = arena_alloc(arena, len + 1);
+    strncpy(new_str, str, len);
+    new_str[len] = 0;
+    return new_str;
+}
+
+char *arena_strdup(arena_t *arena, char *str)
+{
+    return arena_strdup_with_len(arena, str, strlen(str) + 1);
 }
 
 /**
@@ -983,6 +1001,8 @@ void global_init(void)
     BLOCK_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     INSN_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     BB_ARENA = arena_init(DEFAULT_ARENA_SIZE);
+    if (qbe_sil)
+        QBE_SIL_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     PH2_IR_FLATTEN = malloc(MAX_IR_INSTR * sizeof(ph2_ir_t *));
     SOURCE = strbuf_create(MAX_SOURCE);
     FUNC_MAP = hashmap_create(DEFAULT_FUNCS_SIZE);
@@ -1005,6 +1025,8 @@ void global_release(void)
     arena_free(BLOCK_ARENA);
     arena_free(INSN_ARENA);
     arena_free(BB_ARENA);
+    if (qbe_sil)
+        arena_free(QBE_SIL_ARENA);
     free(PH2_IR_FLATTEN);
     strbuf_free(SOURCE);
     hashmap_free(FUNC_MAP);

@@ -5,9 +5,11 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
+#ifndef QBE_SIL
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#endif
 
 #include "../config"
 #include "defs.h"

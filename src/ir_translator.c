@@ -1,7 +1,9 @@
+#ifndef QBE_SIL
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 #include "defs.h"
 #include "globals.c"
@@ -96,8 +98,10 @@ var_t *qs_gen_dest(qs_ir_val_t *val, basic_block_t *bb, block_t *blk)
         break;
     case QS_V_GLOBAL:
         var = find_global_var(name);
-        if (!var)
+        if (!var) {
+            printf("[DBG]: GLOB: %s\n", name);
             fatal("Unable to find global");
+        }
         return var;
     case QS_V_TEMP:
         var = find_local_var(name, blk);
@@ -139,6 +143,8 @@ var_t *qs_gen_value(qs_ir_val_t *val, basic_block_t *bb, block_t *blk)
             strcpy(var->var_name, name);
             return var;
         }
+        printf("[DBG]: GLOB: %s bb: %s func: %s\n", name, bb->bb_label_name,
+               bb->belong_to->return_def.var_name);
         fatal("Unable to find global (or function)");
         break;
     }
@@ -160,6 +166,16 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
     opcode_t opcode;
     int sz;
     var_t *dest, *rs1, *rs2;
+    // OP_ALLOC
+    char *temp_name;
+    // OP_CALL
+    int len = 0;
+    var_t *args[MAX_PARAMS];
+    qs_ir_val_t *arg;
+    char *name;
+    bool is_fn_ptr;
+    var_t *indirect_fn_ptr;
+
 
     if (inst->args)
         rs2_val = inst->args->next;
@@ -234,15 +250,15 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_write, NULL, rs1, rs2, sz, NULL);
         break;
     case QS_OP_ALLOC: {
-        char *temp_name = trim_sigil(inst->dest->temp->name);
+        temp_name = trim_sigil(inst->dest->temp->name);
 
-        if (find_local_var(temp_name, blk)) {
+        /* if (find_local_var(temp_name, blk)) {
             printf(
                 "[INFO]: Shadowing temp variable \"%s\" in function \"%s\" \n",
                 trim_sigil(inst->dest->temp->name),
                 blk->func->return_def.var_name);
             fatal("ALLOC: Attempt to shadow temp variable via alloc");
-        }
+        } */
 
         if (inst->dest->kind != QS_V_TEMP) {
             fatal("ALLOC: Destination must be temp variable");
@@ -275,13 +291,16 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
         add_insn(blk, bb, OP_assign, dest, rs1, NULL, 0, NULL);
         break;
     case QS_OP_CALL: {
-        int len = 0;
-        var_t *args[MAX_PARAMS];
-        qs_ir_val_t *arg = inst->args->next;
-        char *name = rs1_val->kind == QS_V_GLOBAL
-                         ? trim_sigil(rs1_val->global->name)
-                         : trim_sigil(rs1_val->temp->name);
-        bool is_fn_ptr = !find_func(name);
+        arg = inst->args->next;
+        if (rs1_val->kind == QS_V_GLOBAL)
+            name = trim_sigil(rs1_val->global->name);
+        else
+            name = trim_sigil(rs1_val->temp->name);
+        is_fn_ptr = !find_func(name);
+        if (is_fn_ptr)
+            indirect_fn_ptr = qs_gen_value(rs1_val, bb, blk);
+        else
+            indirect_fn_ptr = NULL;
 
         for (int i = 0; arg; arg = arg->next) {
             args[i] = qs_gen_value(arg, bb, blk);
@@ -289,14 +308,14 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
             len++;
         }
 
-        var_t *indirect_fn_ptr =
-            is_fn_ptr ? qs_gen_value(rs1_val, bb, blk) : NULL;
-
         for (int i = 0; i < len; i++)
             add_insn(blk, bb, OP_push, NULL, args[i], NULL, len - i - 1, NULL);
 
-        add_insn(blk, bb, is_fn_ptr ? OP_indirect : OP_call, NULL,
-                 indirect_fn_ptr, NULL, 0, is_fn_ptr ? NULL : name);
+        if (is_fn_ptr)
+            add_insn(blk, bb, OP_indirect, NULL, indirect_fn_ptr, NULL, 0,
+                     NULL);
+        else
+            add_insn(blk, bb, OP_call, NULL, NULL, NULL, 0, name);
 
         if (inst->dest) {
             dest = qs_gen_dest(inst->dest, bb, blk);
@@ -328,8 +347,9 @@ void qs_gen_inst(qs_ir_inst_t *inst, basic_block_t *bb, block_t *blk)
     }
 
     // HACK: Mark short circuited result as logical_ret
-    if (!strncmp(bb->bb_label_name, "@L_and_shared", 13) ||
-        !strncmp(bb->bb_label_name, "@L_or_shared", 12)) {
+    if ((!strncmp(bb->bb_label_name, "@L_and_shared", 13) ||
+         !strncmp(bb->bb_label_name, "@L_or_shared", 12)) &&
+        inst->op == QS_OP_COPY) {
         dest->is_logical_ret = true;
     }
 }
@@ -350,9 +370,8 @@ void qs_gen_func(qs_ir_func_t *ir_func, char *name)
 
     func->stack_size = 4;
     func->num_params = ir_func->nparams;
+    qs_ir_temp_t *temp = ir_func->temps;
     for (int j = 0; j < func->num_params; j++) {
-        qs_ir_temp_t *temp = &ir_func->temps[j];
-
         init_var(&func->param_defs[j]);
         strcpy(func->param_defs[j].var_name, trim_sigil(temp->name));
         func->param_defs[j].type = qs_convert_type(temp->type);
@@ -360,6 +379,8 @@ void qs_gen_func(qs_ir_func_t *ir_func, char *name)
         add_symbol(func->bbs, &func->param_defs[j]);
         func->param_defs[j].base = &func->param_defs[j];
         var_add_killed_bb(&func->param_defs[j], func->bbs);
+
+        temp = temp->next;
     }
 
     func->va_args = ir_func->variadic;

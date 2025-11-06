@@ -5,8 +5,10 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
+#ifndef QBE_SIL
 #include <stdio.h>
 #include <string.h>
+#endif
 
 #include "defs.h"
 #include "globals.c"
@@ -669,10 +671,11 @@ void solve_phi_insertion(void)
                 basic_block_t *bb = work_list[i];
                 for (int j = 0; j < bb->df_idx; j++) {
                     basic_block_t *df = bb->DF[j];
+                    bool is_decl;
                     if (!var_check_in_scope(var, df->scope))
                         continue;
 
-                    bool is_decl = false;
+                    is_decl = false;
                     for (symbol_t *s = df->symbol_list.head; s; s = s->next) {
                         if (s->var == var) {
                             is_decl = true;
@@ -748,6 +751,7 @@ var_t *get_stack_top_subscript_var(var_t *var)
     }
 
     abort();
+    return NULL;
 }
 
 void rename_var(var_t **var)
@@ -916,6 +920,7 @@ void unwind_phi(void)
 }
 
 #ifdef __SHECC__
+#elif defined(QBE_SIL)
 #else
 void bb_dump_connection(FILE *fd,
                         basic_block_t *curr,
@@ -1254,6 +1259,7 @@ void ssa_build(void)
     solve_phi_params();
 
 #ifdef __SHECC__
+#elif defined(QBE_SIL)
 #else
     if (dump_ir) {
         dump_cfg("CFG.dot");
@@ -1287,6 +1293,8 @@ bool cse(insn_t *insn, basic_block_t *bb)
     use_chain_t *rs2_delete_user = NULL;
     for (use_chain_t *user = base->users_head; user; user = user->next) {
         insn_t *i = user->insn;
+        bool check_dom = false;
+        basic_block_t *i_bb = i->belong_to;
 
         /* Delete the use chain nodes found in the last loop */
         if (rs1_delete_user) {
@@ -1307,8 +1315,6 @@ bool cse(insn_t *insn, basic_block_t *bb)
             continue;
         if (i->rs1 != base || i->rs2 != idx)
             continue;
-        basic_block_t *i_bb = i->belong_to;
-        bool check_dom = 0;
         /* Check if the instructions are under the same dominate tree */
         for (;; i_bb = i_bb->idom) {
             if (i_bb == bb) {

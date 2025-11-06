@@ -1,8 +1,10 @@
 #pragma once
+#ifndef QBE_SIL
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 #include "defs.h"
 #include "globals.c"
@@ -59,7 +61,6 @@ void qs_error_at(int line, int col, char *fmt, int arg1)
     printf("Error %d:%d: ", line, col);
     printf(fmt, arg1);
     printf("\n");
-    qs_arena_free_all();
     exit(1);
 }
 
@@ -237,7 +238,7 @@ void qs_next_tok()
         }
         int n = qs_src - start;
 
-        char *name = qs_arena_strdup(start, n);
+        char *name = arena_strdup_with_len(QBE_SIL_ARENA, start, n);
         qs_tok.text = name;
         qs_tok.len = n;
         if (sig == '$')
@@ -300,7 +301,7 @@ void qs_next_tok()
             qs_error_at(qs_tok.line, qs_tok.col, "unterminated string", 0);
         }
 
-        char *dest = qs_arena_alloc(len + 1);
+        char *dest = arena_alloc(QBE_SIL_ARENA, len + 1);
 
         int i = 0;
         while (*qs_src && *qs_src != '"') {
@@ -356,7 +357,7 @@ void qs_next_tok()
         }
         int n = qs_src - start;
 
-        char *name = qs_arena_strdup(start, n);
+        char *name = arena_strdup_with_len(QBE_SIL_ARENA, start, n);
         qs_tok.k = qs_kw_lookup(name, n);
         qs_tok.text = name;
         qs_tok.len = n;
@@ -397,8 +398,7 @@ void qs_load_source_file(char *file)
 
     for (;;) {
         if (!fgets(buffer, MAX_LINE_LEN, f)) {
-            fclose(f);
-            return;
+            break;
         }
         strcpy(SOURCE->elements + SOURCE->size, buffer);
         SOURCE->size += strlen(buffer);

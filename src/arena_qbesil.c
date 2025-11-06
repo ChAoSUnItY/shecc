@@ -1,6 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-
 typedef struct qs_arena_chunk {
     struct qs_arena_chunk *next;
     int used;

@@ -12,7 +12,10 @@
  * dead variable and does NOT wrtie it back to the stack.
  */
 
+#ifndef QBE_SIL
 #include <stdbool.h>
+#include <stdlib.h>
+#endif
 
 #include "defs.h"
 #include "globals.c"

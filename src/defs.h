@@ -6,7 +6,9 @@
  */
 
 #pragma once
+#ifndef QBE_SIL
 #include <stdbool.h>
+#endif
 
 /* definitions */
 
@@ -17,7 +19,7 @@
 #define MAX_VAR_LEN 64
 #define MAX_TYPE_LEN 32
 #define MAX_PARAMS 8
-#define MAX_LOCALS 1600
+#define MAX_LOCALS 2048
 #define MAX_FIELDS 64
 #define MAX_TYPES 128
 #define MAX_IR_INSTR 60000

@@ -1,8 +1,10 @@
 #pragma once
+#ifndef QBE_SIL
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 #include "lexer_qbesil.c"
 
@@ -36,7 +38,7 @@ void *qs_dynarr_reserve(char *data, qs_dynarr_sz_t *sz, int new_cap)
 {
     if (new_cap <= sz->cap)
         return data;
-    char *new_data = qs_arena_alloc(new_cap * sz->elem_size);
+    char *new_data = arena_alloc(QBE_SIL_ARENA, new_cap * sz->elem_size);
     int real_size = sz->len * sz->elem_size;
     if (data)
         for (int i = 0; i < real_size; ++i)
@@ -158,6 +160,7 @@ struct qs_ir_temp {
     char *name;
     qs_ir_type_t type;
     int isparam;
+    struct qs_ir_temp *next;
 };
 
 struct qs_ir_block_list {
@@ -184,7 +187,6 @@ struct qs_ir_func {
     qs_ir_type_t rty;
 
     qs_ir_temp_t *temps;
-    qs_dynarr_sz_t ntemp;
 
     int nparams;
     bool variadic;
@@ -302,7 +304,7 @@ qs_ir_block_t *qs_block_find_pred(qs_ir_block_t *blk, char *name);
 
 qs_ir_module_t *qs_new_module()
 {
-    qs_ir_module_t *m = qs_arena_alloc(sizeof(qs_ir_module_t));
+    qs_ir_module_t *m = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_module_t));
     m->funcs = qs_dynarr_init(&m->nfunc, 0, sizeof(qs_ir_func_t));
     m->datas = qs_dynarr_init(&m->ndata, 0, sizeof(qs_ir_data_t));
     m->globals = qs_dynarr_init(&m->nglobal, 0, sizeof(qs_ir_global_t));
@@ -313,7 +315,7 @@ qs_ir_global_t *qs_new_global_sym(qs_ir_module_t *m, char *name)
 {
     qs_ir_global_t g;
     g.kind = QS_GLOBAL_UNDEF;
-    g.name = qs_arena_strdup(name, strlen(name));
+    g.name = arena_strdup(QBE_SIL_ARENA, name);
     g.func = NULL;
     g.data = NULL;
 
@@ -330,9 +332,9 @@ qs_ir_func_t *qs_new_func(qs_ir_module_t *m,
                           qs_ir_type_t rty,
                           qs_ir_global_t *g)
 {
-    qs_ir_func_t *f = qs_arena_alloc(sizeof(qs_ir_func_t)), *cur;
+    qs_ir_func_t *f = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_func_t)), *cur;
     f->rty = rty;
-    f->temps = qs_dynarr_init(&f->ntemp, 0, sizeof(qs_ir_temp_t));
+    f->temps = NULL;
     f->nparams = 0;
     f->variadic = false;
     f->blocks = NULL;
@@ -359,8 +361,9 @@ qs_ir_func_t *qs_new_func(qs_ir_module_t *m,
 
 qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
 {
-    qs_ir_block_t *blk = qs_arena_alloc(sizeof(qs_ir_block_t)), *cur;
-    blk->name = qs_arena_strdup(name, strlen(name));
+    qs_ir_block_t *blk = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_block_t)),
+                  *cur;
+    blk->name = arena_strdup(QBE_SIL_ARENA, name);
     blk->preds = NULL;
     blk->succs = NULL;
     blk->resolved = false;
@@ -386,7 +389,8 @@ qs_ir_block_t *qs_new_block(qs_ir_func_t *f, char *name)
 
 void qs_block_add_succ(qs_ir_block_t *blk, qs_ir_block_t *succ)
 {
-    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)),
+    qs_ir_block_list_t *blk_list = arena_alloc(QBE_SIL_ARENA,
+                                               sizeof(qs_ir_block_list_t)),
                        *cur;
     blk_list->blk = succ;
     blk_list->next = NULL;
@@ -405,7 +409,8 @@ void qs_block_add_succ(qs_ir_block_t *blk, qs_ir_block_t *succ)
 
 void qs_block_add_pred(qs_ir_block_t *blk, qs_ir_block_t *pred)
 {
-    qs_ir_block_list_t *blk_list = qs_arena_alloc(sizeof(qs_ir_block_list_t)),
+    qs_ir_block_list_t *blk_list = arena_alloc(QBE_SIL_ARENA,
+                                               sizeof(qs_ir_block_list_t)),
                        *cur;
     blk_list->blk = pred;
     blk_list->next = NULL;
@@ -427,17 +432,24 @@ qs_ir_temp_t *qs_new_temp(qs_ir_func_t *f,
                           qs_ir_type_t ty,
                           bool isparam)
 {
-    qs_ir_temp_t temp;
-    temp.name = qs_arena_strdup(name, strlen(name));
-    temp.type = ty;
-    temp.isparam = isparam;
+    qs_ir_temp_t *temp = malloc(sizeof(qs_ir_temp_t)), *cur;
+    temp->name = arena_strdup(QBE_SIL_ARENA, name);
+    temp->type = ty;
+    temp->isparam = isparam;
+    temp->next = NULL;
 
-    // avoid incompatible pointer conversion warning
-    void *data = f->temps;
-    void *elem_ptr = &temp;
-    f->temps = qs_dynarr_push(data, &f->ntemp, elem_ptr);
-    data = f->temps;
-    return qs_dynarr_get(data, &f->ntemp, f->ntemp.len - 1);
+    if (!f->temps) {
+        f->temps = temp;
+    } else {
+        cur = f->temps;
+
+        while (cur->next)
+            cur = cur->next;
+
+        cur->next = temp;
+    }
+
+    return temp;
 }
 
 qs_ir_data_t *qs_new_data(qs_ir_module_t *m, char *name, qs_ir_global_t *g)
@@ -463,7 +475,7 @@ qs_ir_data_t *qs_new_data(qs_ir_module_t *m, char *name, qs_ir_global_t *g)
 
 qs_ir_inst_t *qs_new_inst(qs_ir_block_t *blk, qs_ir_op_t op)
 {
-    qs_ir_inst_t *inst = qs_arena_alloc(sizeof(qs_ir_inst_t));
+    qs_ir_inst_t *inst = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_inst_t));
     inst->op = op;
     inst->dest = NULL;
     inst->args = NULL;
@@ -509,7 +521,7 @@ void qs_inst_add_block(qs_ir_inst_t *inst, qs_ir_block_t *blk)
 
 qs_ir_val_t *qs_new_val_temp(qs_ir_type_t ty, qs_ir_temp_t *temp)
 {
-    qs_ir_val_t *val = qs_arena_alloc(sizeof(qs_ir_val_t));
+    qs_ir_val_t *val = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_val_t));
     val->kind = QS_V_TEMP;
     val->type = ty;
     val->temp = temp;
@@ -518,7 +530,7 @@ qs_ir_val_t *qs_new_val_temp(qs_ir_type_t ty, qs_ir_temp_t *temp)
 
 qs_ir_val_t *qs_new_val_const(qs_ir_type_t ty, int ival)
 {
-    qs_ir_val_t *val = qs_arena_alloc(sizeof(qs_ir_val_t));
+    qs_ir_val_t *val = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_val_t));
     val->kind = QS_V_CONST;
     val->type = ty;
     val->ival = ival;
@@ -527,7 +539,7 @@ qs_ir_val_t *qs_new_val_const(qs_ir_type_t ty, int ival)
 
 qs_ir_val_t *qs_new_val_global(qs_ir_type_t ty, qs_ir_global_t *global)
 {
-    qs_ir_val_t *val = qs_arena_alloc(sizeof(qs_ir_val_t));
+    qs_ir_val_t *val = arena_alloc(QBE_SIL_ARENA, sizeof(qs_ir_val_t));
     val->kind = QS_V_GLOBAL;
     val->type = ty;
     val->global = global;
@@ -571,7 +583,7 @@ void qs_data_add_str(qs_ir_data_t *d, qs_ir_type_t ty, char *str)
     item.kind = QS_DI_STR;
     item.type = ty;
     item.size = length + 1;  // include null terminator
-    item.str = qs_arena_strdup(str, length);
+    item.str = arena_strdup(QBE_SIL_ARENA, str);
 
     // avoid incompatible pointer conversion warning
     void *data = d->dataitems;
@@ -632,9 +644,9 @@ qs_ir_block_t *qs_find_block(qs_ir_func_t *f, char *name)
 
 qs_ir_temp_t *qs_find_temp(qs_ir_func_t *f, char *name)
 {
-    for (int i = 0; i < f->ntemp.len; ++i) {
-        if (strcmp(f->temps[i].name, name) == 0)
-            return &f->temps[i];
+    for (qs_ir_temp_t *temp = f->temps; temp; temp = temp->next) {
+        if (!strcmp(temp->name, name))
+            return temp;
     }
     return NULL;
 }
@@ -784,6 +796,7 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
         if (!qs_peek(QS_TOK_TEMP))
             break;
         dest_name = qs_tok.text;
+        kind = QS_V_TEMP;
         qs_next_tok();
         qs_expect(QS_TOK_EQ);
         type = qs_parse_type();
@@ -856,25 +869,28 @@ void qs_parse_block(qs_ir_module_t *mod, qs_ir_func_t *func, qs_ir_block_t *blk)
                             "expected global symbol or temp", 0);
 
             if (has_dest) {
+                qs_ir_temp_t *temp_dest;
+                qs_ir_global_t *glob_dest;
+                qs_ir_val_t *dest_val;
                 switch (kind) {
                 case QS_V_CONST:
                     qs_error_at(qs_tok.line, qs_tok.col,
                                 "invalid destination kind: constant", 0);
                     break;
                 case QS_V_TEMP: {
-                    qs_ir_temp_t *dest = qs_find_temp(func, dest_name);
-                    if (!dest)
-                        dest = qs_new_temp(func, dest_name, type, false);
-                    qs_ir_val_t *dest_val = qs_new_val_temp(type, dest);
+                    temp_dest = qs_find_temp(func, dest_name);
+                    if (!temp_dest)
+                        temp_dest = qs_new_temp(func, dest_name, type, false);
+                    dest_val = qs_new_val_temp(type, temp_dest);
                     call->dest = dest_val;
                     break;
                 }
                 case QS_V_GLOBAL: {
-                    qs_ir_global_t *dest = qs_find_global_sym(mod, dest_name);
-                    if (!dest)
+                    glob_dest = qs_find_global_sym(mod, dest_name);
+                    if (!glob_dest)
                         qs_error_at(qs_tok.line, qs_tok.col,
                                     "unknown global symbol", 0);
-                    qs_ir_val_t *dest_val = qs_new_val_global(type, dest);
+                    dest_val = qs_new_val_global(type, glob_dest);
                     call->dest = dest_val;
                     break;
                 }
@@ -1464,11 +1480,11 @@ void qs_print_block(qs_ir_block_t *blk)
 void qs_print_func(qs_ir_func_t *func)
 {
     printf("(");
-    for (int i = 0; i < func->nparams; ++i) {
-        if (i)
+    for (qs_ir_temp_t *temp = func->temps; temp; temp = temp->next) {
+        if (temp != func->temps)
             printf(", ");
-        qs_print_type(func->temps[i].type);
-        printf(" %s", func->temps[i].name);
+        qs_print_type(temp->type);
+        printf(" %s", temp->name);
     }
     if (func->variadic)
         printf(", ...");
@@ -1526,7 +1542,6 @@ void qs_print_module(qs_ir_module_t *mod)
 
 qs_ir_module_t *qs_parse(char *in)
 {
-    qs_init_arena();
     qs_init_lexer(in);
     qs_ir_module_t *mod = qs_parse_module();
 
