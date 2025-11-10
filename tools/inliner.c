@@ -154,7 +154,7 @@ void save_to(char *file)
 int main(int argc, char *argv[])
 {
     if (argc <= 2) {
-        printf("Usage: inliner <input.c> <output.inc>\n");
+        printf("Usage: inliner <input.c> (<...>) <output.inc>\n");
         return -1;
     }
 
@@ -177,9 +177,10 @@ int main(int argc, char *argv[])
     write_str("}\n");
 
     write_str("void libc_generate() {\n");
-    load_from(argv[1]);
+    for (int i = 1; i < argc - 1; i++)
+        load_from(argv[i]);
     write_str("}\n");
-    save_to(argv[2]);
+    save_to(argv[argc - 1]);
     strbuf_free(SOURCE);
 
     return 0;

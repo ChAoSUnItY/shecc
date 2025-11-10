@@ -41,7 +41,12 @@ ARCHS = arm riscv
 ARCH ?= $(firstword $(ARCHS))
 HOST_ARCH = $(shell arch 2>/dev/null)
 SRCDIR := $(shell find src -type d)
-LIBDIR := $(shell find lib -type d)
+LIBDIR := lib
+LIB_HEADERS := $(wildcard $(LIBDIR)/*.h)
+LIB_SRCS := $(wildcard $(LIBDIR)/*.c)
+NORM_LF_HEADERS := $(LIB_HEADERS:$(LIBDIR)/%.h=$(OUT)/%.norm.h)
+NORM_LF_SRCS := $(LIB_SRCS:$(LIBDIR)/%.c=$(OUT)/%.norm.c)
+
 
 SRCS := $(wildcard $(patsubst %,%/main.c, $(SRCDIR)))
 OBJS := $(SRCS:%.c=$(OUT)/%.o)
@@ -122,11 +127,16 @@ $(OUT)/norm-lf: tools/norm-lf.c
 	$(VECHO) "  CC+LD\t$@\n"
 	$(Q)$(CC) $(CFLAGS) -o $@ $^
 
-$(OUT)/libc.inc: $(OUT)/inliner $(OUT)/norm-lf $(LIBDIR)/c.c
+$(OUT)/%.norm.c: $(LIBDIR)/%.c
+	$(Q)$(OUT)/norm-lf $^ $@
+
+$(OUT)/%.norm.h: $(LIBDIR)/%.h
+	$(Q)$(OUT)/norm-lf $^ $@
+
+$(OUT)/libc.inc: $(OUT)/inliner $(OUT)/norm-lf $(NORM_LF_HEADERS) $(NORM_LF_SRCS)
 	$(VECHO) "  GEN\t$@\n"
-	$(Q)$(OUT)/norm-lf $(LIBDIR)/c.c $(OUT)/c.normalized.c
-	$(Q)$(OUT)/inliner $(OUT)/c.normalized.c $@
-	$(Q)$(RM) $(OUT)/c.normalized.c
+	$(Q)$(OUT)/inliner $(NORM_LF_HEADERS) $(NORM_LF_SRCS) $@
+	$(Q)$(RM) $(NORM_LF_HEADERS) $(NORM_LF_SRCS)
 
 $(OUT)/inliner: tools/inliner.c
 	$(VECHO) "  CC+LD\t$@\n"

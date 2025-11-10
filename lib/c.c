@@ -7,15 +7,6 @@
 
 /* minimal libc implementation */
 
-#define NULL 0
-
-#define bool _Bool
-#define true 1
-#define false 0
-
-#define INT_MAX 0x7fffffff
-#define INT_MIN 0x80000000
-
 #if defined(__arm__)
 #define __SIZEOF_POINTER__ 4
 #define __syscall_exit 1
@@ -43,12 +34,8 @@
 
 #define INT_BUF_LEN 16
 
-typedef int FILE;
-
 /* va_list support for variadic functions */
 typedef int *va_list;
-
-void abort(void);
 
 int strlen(char *str)
 {
