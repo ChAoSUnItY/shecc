@@ -113,6 +113,7 @@ typedef struct {
 /* lexer tokens */
 typedef enum {
     T_start, /* FIXME: Unused, intended for lexer state machine init */
+    T_eof,   /* end-of-file (EOF) */
     T_numeric,
     T_identifier,
     T_comma,  /* , */
@@ -161,7 +162,6 @@ typedef enum {
     T_question,      /* ? */
     T_colon,         /* : */
     T_semicolon,     /* ; */
-    T_eof,           /* end-of-file (EOF) */
     T_ampersand,     /* & */
     T_return,
     T_if,
@@ -193,19 +193,33 @@ typedef enum {
     T_cppd_endif,
     T_cppd_ifdef,
     T_cppd_ifndef,
-    T_cppd_pragma
-} token_t;
+    T_cppd_pragma,
+    /* C pre-processor specific, these kinds
+     * will be removed after pre-processing is done.
+     */
+    T_newline,
+    T_backslash
+} token_kind_t;
 
 /* Source location tracking for better error reporting */
 typedef struct {
+    int pos; /* raw source file position */
+    int len; /* length of token */
     int line;
     int column;
     char *filename;
 } source_location_t;
 
+typedef struct token {
+    token_kind_t kind;
+    char *literal;
+    source_location_t location;
+    struct token *next;
+} token_t;
+
 /* Token structure with metadata for enhanced lexing */
 typedef struct token_info {
-    token_t type;
+    token_kind_t type;
     char value[MAX_TOKEN_LEN];
     source_location_t location;
     struct token_info *next; /* For freelist management */
@@ -369,7 +383,7 @@ struct var {
     int in_loop;
     struct var *base;
     int subscript;
-    struct var *subscripts[64];
+    struct var *subscripts[128];
     int subscripts_idx;
     rename_t rename;
     ref_block_list_t ref_block_list; /* blocks which kill variable */

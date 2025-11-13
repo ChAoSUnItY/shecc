@@ -25,6 +25,9 @@
 /* C language lexical analyzer */
 #include "lexer.c"
 
+/* C language pre-processor */
+#include "preprocessor.c"
+
 /* C language syntactic analyzer */
 #include "parser.c"
 
@@ -49,6 +52,7 @@
 int main(int argc, char *argv[])
 {
     bool libc = true;
+    bool expand_only = false;
     char *out = NULL;
     char *in = NULL;
 
@@ -59,6 +63,8 @@ int main(int argc, char *argv[])
             hard_mul_div = true;
         else if (!strcmp(argv[i], "--no-libc"))
             libc = false;
+        else if (!strcmp(argv[i], "-E"))
+            expand_only = true;
         else if (!strcmp(argv[i], "-o")) {
             if (i + 1 < argc) {
                 out = argv[i + 1];
@@ -82,6 +88,19 @@ int main(int argc, char *argv[])
 
     /* initialize global objects */
     global_init();
+
+    if (expand_only) {
+        token_t *tk = lex_token_by_file(in);
+
+        tk = preprocess(tk);
+
+        while (tk) {
+            dbg_token(tk);
+            tk = tk->next;
+        }
+
+        return 0;
+    }
 
     /* include libc */
     if (libc)

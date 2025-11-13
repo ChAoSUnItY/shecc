@@ -18,7 +18,7 @@ char *intern_string(char *str);
 
 /* Lexer */
 char token_str[MAX_TOKEN_LEN];
-token_t next_token;
+token_kind_t next_token;
 char next_char;
 bool skip_newline = true;
 
@@ -36,10 +36,7 @@ int macro_return_idx;
 
 /* Global objects */
 
-/* FUNC_MAP is used to integrate function storing and boost lookup
- * performance, currently it uses FNV-1a hash function to hash function
- * name.
- */
+hashmap_t *SRC_FILE_MAP;
 hashmap_t *MACROS_MAP;
 hashmap_t *FUNC_MAP;
 hashmap_t *ALIASES_MAP;
@@ -68,6 +65,10 @@ arena_t *BLOCK_ARENA;
 
 /* BB_ARENA is responsible for basic_block_t / ph2_ir_t allocation */
 arena_t *BB_ARENA;
+
+/* TOKEN_ARENA is responsible for token_t (including literal) /
+ * source_location_t allocation */
+arena_t *TOKEN_ARENA;
 
 /* GENERAL_ARENA is responsible for functions, symbols, constants, aliases,
  * macros, and traversal args
@@ -1184,33 +1185,37 @@ void global_init(void)
 {
     elf_code_start = ELF_START + elf_header_len;
 
-    MACROS_MAP = hashmap_create(MAX_ALIASES);
-
+    
     /* Initialize arenas first so we can use them for allocation */
     BLOCK_ARENA = arena_init(DEFAULT_ARENA_SIZE); /* Variables/blocks */
     INSN_ARENA = arena_init(LARGE_ARENA_SIZE); /* Instructions - high usage */
     BB_ARENA = arena_init(SMALL_ARENA_SIZE);   /* Basic blocks - low usage */
     HASHMAP_ARENA = arena_init(DEFAULT_ARENA_SIZE); /* Hash nodes */
+    TOKEN_ARENA = arena_init(LARGE_ARENA_SIZE);
     GENERAL_ARENA =
-        arena_init(DEFAULT_ARENA_SIZE); /* For TYPES and PH2_IR_FLATTEN */
-
+    arena_init(DEFAULT_ARENA_SIZE); /* For TYPES and PH2_IR_FLATTEN */
+    
     /* Use arena allocation for better memory management */
     TYPES = arena_alloc(GENERAL_ARENA, MAX_TYPES * sizeof(type_t));
     PH2_IR_FLATTEN =
-        arena_alloc(GENERAL_ARENA, MAX_IR_INSTR * sizeof(ph2_ir_t *));
-
+    arena_alloc(GENERAL_ARENA, MAX_IR_INSTR * sizeof(ph2_ir_t *));
+    
     /* Initialize string pool for identifier deduplication */
     string_pool = arena_alloc(GENERAL_ARENA, sizeof(string_pool_t));
     string_pool->strings = hashmap_create(512);
-
+    
     /* Initialize string literal pool for deduplicating string constants */
     string_literal_pool =
-        arena_alloc(GENERAL_ARENA, sizeof(string_literal_pool_t));
+    arena_alloc(GENERAL_ARENA, sizeof(string_literal_pool_t));
     string_literal_pool->literals = hashmap_create(256);
-
+    
     SOURCE = strbuf_create(MAX_SOURCE);
+    SRC_FILE_MAP = hashmap_create(8);
+    MACROS_MAP = hashmap_create(MAX_ALIASES);
     FUNC_MAP = hashmap_create(DEFAULT_FUNCS_SIZE);
     INCLUSION_MAP = hashmap_create(DEFAULT_INCLUSIONS_SIZE);
+    ALIASES_MAP = hashmap_create(MAX_ALIASES);
+    CONSTANTS_MAP = hashmap_create(MAX_CONSTANTS);
 
     /* Initialize token management globals */
     current_location.line = 1;
@@ -1218,8 +1223,6 @@ void global_init(void)
     current_location.filename = NULL;
     TOKEN_POOL = NULL;
     TOKEN_BUFFER = NULL;
-    ALIASES_MAP = hashmap_create(MAX_ALIASES);
-    CONSTANTS_MAP = hashmap_create(MAX_CONSTANTS);
 
     elf_code = strbuf_create(MAX_CODE);
     elf_data = strbuf_create(MAX_DATA);
@@ -1331,20 +1334,19 @@ void global_release(void)
     /* Cleanup lexer hashmaps */
     lexer_cleanup();
 
-    hashmap_free(MACROS_MAP);
-
     /* Free string interning hashmaps */
     if (string_pool && string_pool->strings)
-        hashmap_free(string_pool->strings);
+    hashmap_free(string_pool->strings);
     if (string_literal_pool && string_literal_pool->literals)
-        hashmap_free(string_literal_pool->literals);
-
+    hashmap_free(string_literal_pool->literals);
+    
     arena_free(BLOCK_ARENA);
     arena_free(INSN_ARENA);
     arena_free(BB_ARENA);
     arena_free(HASHMAP_ARENA);
+    arena_free(TOKEN_ARENA);
     arena_free(GENERAL_ARENA); /* free TYPES and PH2_IR_FLATTEN */
-
+    
     strbuf_free(SOURCE);
     strbuf_free(elf_code);
     strbuf_free(elf_data);
@@ -1353,17 +1355,158 @@ void global_release(void)
     strbuf_free(elf_symtab);
     strbuf_free(elf_strtab);
     strbuf_free(elf_section);
-
+    
+    hashmap_free(SRC_FILE_MAP);
+    hashmap_free(MACROS_MAP);
     hashmap_free(FUNC_MAP);
     hashmap_free(INCLUSION_MAP);
     hashmap_free(ALIASES_MAP);
     hashmap_free(CONSTANTS_MAP);
 }
 
+void dbg_token(token_t *token)
+{
+    char *name;
+    switch (token->kind) {
+        case T_start: name = "T_start"; break;
+        case T_eof: name = "T_eof"; break;
+        case T_numeric: name = "T_numeric"; break;
+        case T_identifier: name = "T_identifier"; break;
+        case T_comma: name = "T_comma"; break;
+        case T_string: name = "T_string"; break;
+        case T_char: name = "T_char"; break;
+        case T_open_bracket: name = "T_open_bracket"; break;
+        case T_close_bracket: name = "T_close_bracket"; break;
+        case T_open_curly: name = "T_open_curly"; break;
+        case T_close_curly: name = "T_close_curly"; break;
+        case T_open_square: name = "T_open_square"; break;
+        case T_close_square: name = "T_close_square"; break;
+        case T_asterisk: name = "T_asterisk"; break;
+        case T_divide: name = "T_divide"; break;
+        case T_mod: name = "T_mod"; break;
+        case T_bit_or: name = "T_bit_or"; break;
+        case T_bit_xor: name = "T_bit_xor"; break;
+        case T_bit_not: name = "T_bit_not"; break;
+        case T_log_and: name = "T_log_and"; break;
+        case T_log_or: name = "T_log_or"; break;
+        case T_log_not: name = "T_log_not"; break;
+        case T_lt: name = "T_lt"; break;
+        case T_gt: name = "T_gt"; break;
+        case T_le: name = "T_le"; break;
+        case T_ge: name = "T_ge"; break;
+        case T_lshift: name = "T_lshift"; break;
+        case T_rshift: name = "T_rshift"; break;
+        case T_dot: name = "T_dot"; break;
+        case T_arrow: name = "T_arrow"; break;
+        case T_plus: name = "T_plus"; break;
+        case T_minus: name = "T_minus"; break;
+        case T_minuseq: name = "T_minuseq"; break;
+        case T_pluseq: name = "T_pluseq"; break;
+        case T_asteriskeq: name = "T_asteriskeq"; break;
+        case T_divideeq: name = "T_divideeq"; break;
+        case T_modeq: name = "T_modeq"; break;
+        case T_lshifteq: name = "T_lshifteq"; break;
+        case T_rshifteq: name = "T_rshifteq"; break;
+        case T_xoreq: name = "T_xoreq"; break;
+        case T_oreq: name = "T_oreq"; break;
+        case T_andeq: name = "T_andeq"; break;
+        case T_eq: name = "T_eq"; break;
+        case T_noteq: name = "T_noteq"; break;
+        case T_assign: name = "T_assign"; break;
+        case T_increment: name = "T_increment"; break;
+        case T_decrement: name = "T_decrement"; break;
+        case T_question: name = "T_question"; break;
+        case T_colon: name = "T_colon"; break;
+        case T_semicolon: name = "T_semicolon"; break;
+        case T_ampersand: name = "T_ampersand"; break;
+        case T_return: name = "T_return"; break;
+        case T_if: name = "T_if"; break;
+        case T_else: name = "T_else"; break;
+        case T_while: name = "T_while"; break;
+        case T_for: name = "T_for"; break;
+        case T_do: name = "T_do"; break;
+        case T_typedef: name = "T_typedef"; break;
+        case T_enum: name = "T_enum"; break;
+        case T_struct: name = "T_struct"; break;
+        case T_union: name = "T_union"; break;
+        case T_sizeof: name = "T_sizeof"; break;
+        case T_elipsis: name = "T_elipsis"; break;
+        case T_switch: name = "T_switch"; break;
+        case T_case: name = "T_case"; break;
+        case T_break: name = "T_break"; break;
+        case T_default: name = "T_default"; break;
+        case T_continue: name = "T_continue"; break;
+        case T_goto: name = "T_goto"; break;
+        case T_const: name = "T_const"; break;
+        case T_cppd_include: name = "T_cppd_include"; break;
+        case T_cppd_define: name = "T_cppd_define"; break;
+        case T_cppd_undef: name = "T_cppd_undef"; break;
+        case T_cppd_error: name = "T_cppd_error"; break;
+        case T_cppd_if: name = "T_cppd_if"; break;
+        case T_cppd_elif: name = "T_cppd_elif"; break;
+        case T_cppd_else: name = "T_cppd_else"; break;
+        case T_cppd_endif: name = "T_cppd_endif"; break;
+        case T_cppd_ifdef: name = "T_cppd_ifdef"; break;
+        case T_cppd_ifndef: name = "T_cppd_ifndef"; break;
+        case T_cppd_pragma: name = "T_cppd_pragma"; break;
+        case T_newline: name = "T_newline"; break;
+        case T_backslash: name = "T_backslash"; break;
+        default: name = "<unknown>"; break;
+    }
+
+    if (token->literal) {
+        printf("{kind: %s, lit: \"%s\", loc: %s:%d:%d}\n", name,
+               token->literal, token->location.filename, token->location.line,
+               token->location.column);
+    } else {
+        printf("{kind: %s, lit: (NULL), loc: %s:%d:%d}\n", name,
+               token->location.filename, token->location.line,
+               token->location.column);
+    }
+}
+
 /* Reports an error without specifying a position */
 void fatal(char *msg)
 {
     printf("[Error]: %s\n", msg);
+    abort();
+}
+
+void error_at(char *msg, source_location_t *loc)
+{
+    int offset, start_idx, i = 0, len = loc->len, pos = loc->pos;
+    char diagnostic[MAX_LINE_LEN];
+    strbuf_t *src = hashmap_get(SRC_FILE_MAP, loc->filename);
+
+    if (len < 1)
+        len = 1;
+
+    printf("%s:%d:%d: [Error]: %s\n", loc->filename, loc->line, loc->column, msg);
+    printf("%6d |  ", loc->line);
+
+    for (offset = pos; offset >= 0 && src->elements[offset] != '\n'; offset--);
+
+    start_idx = offset + 1;
+
+    for (offset = start_idx;
+         offset < src->capacity && src->elements[offset] != '\n' && src->elements[offset] != '\0';
+         offset++) {
+        diagnostic[i++] = src->elements[offset];
+    }
+    diagnostic[i] = '\0';
+
+    printf("%s\n", diagnostic);
+    printf("%6c |  ", ' ');
+    
+    i = 0;
+    for (offset = start_idx; offset < pos; offset++)
+        diagnostic[i++] = ' ';
+    diagnostic[i++] = '^';
+    for (; len > 1; len--)
+        diagnostic[i++] = '~';
+
+    strcpy(diagnostic + i, " Error occurs here");
+    printf("%s\n", diagnostic);
     abort();
 }
 

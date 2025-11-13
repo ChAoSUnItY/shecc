@@ -15,7 +15,7 @@
 #include "opt-sccp.c"
 
 /* Configuration constants - replace magic numbers */
-#define PHI_WORKLIST_SIZE 64
+#define PHI_WORKLIST_SIZE 128
 #define DCE_WORKLIST_SIZE 2048
 
 /* Dead store elimination window size */

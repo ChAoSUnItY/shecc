@@ -1932,7 +1932,7 @@ void read_expr_operand(block_t *parent, basic_block_t **bb)
                 /* Save current position to backtrack if needed */
                 int saved_pos = SOURCE->size;
                 char saved_char = next_char;
-                token_t saved_token = next_token;
+                token_kind_t saved_token = next_token;
 
                 /* Try to parse as typename */
                 lex_expect(T_identifier);
