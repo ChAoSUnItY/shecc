@@ -198,7 +198,10 @@ typedef enum {
      * will be removed after pre-processing is done.
      */
     T_newline,
-    T_backslash
+    T_backslash,
+    T_whitespace,
+    T_tab,
+    T_inclusion_path
 } token_kind_t;
 
 /* Source location tracking for better error reporting */

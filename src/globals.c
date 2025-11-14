@@ -1451,6 +1451,7 @@ void dbg_token(token_t *token)
         case T_cppd_pragma: name = "T_cppd_pragma"; break;
         case T_newline: name = "T_newline"; break;
         case T_backslash: name = "T_backslash"; break;
+        case T_inclusion_path: name = "T_inclusion_path"; break;
         default: name = "<unknown>"; break;
     }
 

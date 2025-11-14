@@ -4827,7 +4827,7 @@ basic_block_t *read_body_statement(block_t *parent, basic_block_t *bb)
 
             /* Generate OP_write for pointer dereference assignment */
             add_insn(parent, bb, OP_write, NULL, lvalue, rvalue,
-                     rvalue->type ? rvalue->type->size : PTR_SIZE, NULL);
+                     get_size(rvalue), NULL);
         } else {
             /* Expression statement without assignment */
             perform_side_effect(parent, bb);

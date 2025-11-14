@@ -28,6 +28,8 @@ hashmap_t *KEYWORD_MAP = NULL;
 token_kind_t *directive_tokens_storage = NULL;
 token_kind_t *keyword_tokens_storage = NULL;
 
+hashmap_t *TOKEN_CACHE = NULL;
+
 void lex_init_directives()
 {
     if (DIRECTIVE_MAP)
@@ -135,6 +137,11 @@ void lexer_cleanup()
     if (KEYWORD_MAP) {
         hashmap_free(KEYWORD_MAP);
         KEYWORD_MAP = NULL;
+    }
+
+    if (TOKEN_CACHE) {
+        hashmap_free(TOKEN_CACHE);
+        TOKEN_CACHE = NULL;
     }
 
     /* Token storage arrays are allocated from GENERAL_ARENA and will be
@@ -257,23 +264,6 @@ char read(strbuf_t *buf)
     return buf->elements[buf->size];
 }
 
-char skip(strbuf_t *buf, source_location_t *loc)
-{
-    int pos = buf->size;
-    char ch = buf->elements[pos];
-    while (true) {
-        if (is_whitespace(ch)) {
-            pos++;
-            loc->column++;
-            ch = buf->elements[pos];
-            continue;
-        }
-        break;
-    }
-    buf->size = pos;
-    return ch;
-}
-
 strbuf_t *read_file(char *filename)
 {
     char buffer[MAX_LINE_LEN];
@@ -304,12 +294,36 @@ token_t *new_token(token_kind_t kind, source_location_t *loc, int len)
     return token;
 }
 
-token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
+token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
 {
     token_t *token;
-    char token_buffer[MAX_TOKEN_LEN], ch = skip(buf, loc);
+    char token_buffer[MAX_TOKEN_LEN], ch = peek(buf, 0);
 
     loc->pos = buf->size;
+
+    /* Special treatment on file inclusion path syntax */
+    if (prev && prev->kind == T_cppd_include && (ch == '<' || ch == '"')) {
+        int sz = 0;
+        char closed_ch = ch;
+
+        ch = read(buf);
+
+        while (ch && ch != closed_ch) {
+            token_buffer[sz++] = ch;
+            ch = read(buf);
+        }
+
+        if (!ch)
+            error_at("Unenclosed inclusion path", loc);
+
+        read(buf);
+        token_buffer[sz] = '\0';
+
+        token = new_token(T_inclusion_path, loc, sz + 2);
+        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
+        loc->column += sz + 2;
+        return token;
+    }
 
     if (ch == '#') {
         if (loc->column != 1)
@@ -339,16 +353,9 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
     }
 
     if (ch == '\\') {
-        ch = read(buf);
-        if (ch != '\0' && ch != '\n') {
-            loc->len = 2;
-            error_at("Backslash and newline must not be separated", loc);
-        }
-
         read(buf);
         token = new_token(T_backslash, loc, 1);
-        loc->line++;
-        loc->column = 1;
+        loc->column++;
         return token;
     }
 
@@ -383,7 +390,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
                         pos++;
                         loc->column += 2;
                         buf->size = pos;
-                        return lex_token_nt(buf, loc);
+                        return lex_token_nt(buf, loc, prev);
                     }
                 }
 
@@ -406,7 +413,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
             } while (ch && !is_newline(ch));
             loc->column += pos - buf->size + 1;
             buf->size = pos;
-            return lex_token_nt(buf, loc);
+            return lex_token_nt(buf, loc, prev);
         }
 
         if (ch == '=') {
@@ -421,8 +428,27 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
         return token;
     }
 
+    if (ch == ' ') {
+        /* Compacts sequence of whitespace together */
+        int sz = 1;
+
+        while (read(buf) == ' ')
+            sz++;
+
+        token = new_token(T_whitespace, loc, sz);
+        loc->column += sz;
+        return token;
+    }
+
+    if (ch == '\t') {
+        read(buf);
+        token = new_token(T_tab, loc, 1);
+        loc->column++;
+        return token;
+    }
+
     if (ch == '\0') {
-        ch = read(buf);
+        read(buf);
         token = new_token(T_eof, loc, 1);
         loc->column++;
         return token;
@@ -1131,21 +1157,42 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc)
 
 token_t *lex_token_by_file(char *filename)
 {
-    token_t *head = NULL, *tail = NULL, *cur = NULL;
+    /* FIXME: We should normalize filename first to make cache works as expected */
+
+    token_t *head = NULL, *tail = NULL, *cur = NULL, *prev = NULL;
     /* initialie source location with the following configuration:
      * pos is at 0,
      * len is 1 for reporting convenience,
      * and the column and line number are set to 1.
      */
     source_location_t loc = {0, 1, 1, 1, filename};
-    strbuf_t *buf = read_file(filename);
+    strbuf_t *buf;
+
+    /* Check if token cache is intialized */
+    if (!TOKEN_CACHE)
+        TOKEN_CACHE = hashmap_create(8);
+
     if (!hashmap_contains(SRC_FILE_MAP, filename)) {
+        buf = read_file(filename);
         hashmap_put(SRC_FILE_MAP, filename, buf);
+    } else {
+        buf = hashmap_get(SRC_FILE_MAP, filename);
+        head = hashmap_get(TOKEN_CACHE, filename);
+
+        if (!head)
+            fatal("Internal error, expeceted token cached but it's not");
+    
+        return head;
     }
+
+    /* Borrows strbuf_t#size to use as source index */
     buf->size = 0;
 
     while (buf->size < buf->capacity) {
-        cur = lex_token_nt(buf, &loc);
+        cur = lex_token_nt(buf, &loc, prev);
+
+        if (cur->kind != T_whitespace && cur->kind != T_tab)
+            prev = cur;
 
         /* Append token to token stream */
         if (!head) {
@@ -1164,6 +1211,7 @@ token_t *lex_token_by_file(char *filename)
         memcpy(&head->location, &loc, sizeof(source_location_t));
     }
 
+    hashmap_put(TOKEN_CACHE, filename, head);
     return head;
 }
 
