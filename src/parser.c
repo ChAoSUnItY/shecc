@@ -344,6 +344,7 @@ var_t *resize_var(block_t *block, basic_block_t **bb, var_t *from, var_t *to)
     return from;
 }
 
+/* FIXME: Deprecated */
 int read_numeric_constant(char buffer[])
 {
     int i = 0;
@@ -382,6 +383,7 @@ int read_numeric_constant(char buffer[])
     return value;
 }
 
+/* FIXME: Deprecated */
 int read_constant_expr_operand(void)
 {
     char buffer[MAX_ID_LEN];
@@ -413,6 +415,7 @@ int read_constant_expr_operand(void)
     return -1;
 }
 
+/* FIXME: Deprecated */
 int read_constant_infix_expr(int precedence)
 {
     int lhs, rhs;
@@ -514,11 +517,13 @@ int read_constant_infix_expr(int precedence)
     return lhs;
 }
 
+/* FIXME: Deprecated */
 int read_constant_expr(void)
 {
     return read_constant_infix_expr(0);
 }
 
+/* FIXME: Deprecated */
 /* Skips lines where preprocessor match is false, this will stop once next
  * token is either 'T_cppd_elif', 'T_cppd_else' or 'cppd_endif'.
  */
@@ -531,12 +536,14 @@ void cppd_control_flow_skip_lines(void)
     skip_whitespace();
 }
 
+/* FIXME: Deprecated */
 void check_def(char *alias, bool expected)
 {
     if ((find_alias(alias) != NULL) == expected)
         preproc_match = true;
 }
 
+/* FIXME: Deprecated */
 void read_defined_macro(void)
 {
     char lookup_alias[MAX_TOKEN_LEN];
@@ -549,6 +556,7 @@ void read_defined_macro(void)
     check_def(lookup_alias, true);
 }
 
+/* FIXME: Deprecated */
 /* read preprocessor directive at each potential positions: e.g., global
  * statement / body statement
  */

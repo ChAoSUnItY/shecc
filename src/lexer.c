@@ -470,7 +470,8 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             ch = read(buf);
             if (!is_hex(ch)) {
                 loc->len = 3;
-                error_at("Invalid hex literal: expected hex digit after 0x", loc);
+                error_at("Invalid hex literal: expected hex digit after 0x",
+                         loc);
             }
 
             do {
@@ -704,9 +705,9 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             ch = read(buf);
         }
         token_buffer[sz] = '\0';
-        
+
         read(buf);
-        token = new_token(T_string, loc, sz);
+        token = new_token(T_string, loc, sz + 2);
         token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
         loc->column += buf->size - start_pos;
         return token;
@@ -822,7 +823,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
 
     if (ch == '&') {
         ch = read(buf);
-        
+
         if (ch == '&') {
             read(buf);
             token = new_token(T_log_and, loc, 2);
@@ -1103,11 +1104,14 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
         case 5: /* 5-letter keywords: while, break, union, const */
             if (token_buffer[0] == 'w' && !memcmp(token_buffer, "while", 5))
                 kind = T_while;
-            else if (token_buffer[0] == 'b' && !memcmp(token_buffer, "break", 5))
+            else if (token_buffer[0] == 'b' &&
+                     !memcmp(token_buffer, "break", 5))
                 kind = T_break;
-            else if (token_buffer[0] == 'u' && !memcmp(token_buffer, "union", 5))
+            else if (token_buffer[0] == 'u' &&
+                     !memcmp(token_buffer, "union", 5))
                 kind = T_union;
-            else if (token_buffer[0] == 'c' && !memcmp(token_buffer, "const", 5))
+            else if (token_buffer[0] == 'c' &&
+                     !memcmp(token_buffer, "const", 5))
                 kind = T_const;
             break;
 
@@ -1157,7 +1161,8 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
 
 token_t *lex_token_by_file(char *filename)
 {
-    /* FIXME: We should normalize filename first to make cache works as expected */
+    /* FIXME: We should normalize filename first to make cache works as expected
+     */
 
     token_t *head = NULL, *tail = NULL, *cur = NULL, *prev = NULL;
     /* initialie source location with the following configuration:
@@ -1181,7 +1186,7 @@ token_t *lex_token_by_file(char *filename)
 
         if (!head)
             fatal("Internal error, expeceted token cached but it's not");
-    
+
         return head;
     }
 

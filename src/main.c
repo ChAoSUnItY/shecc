@@ -93,12 +93,13 @@ int main(int argc, char *argv[])
         token_t *tk = lex_token_by_file(in);
 
         tk = preprocess(tk);
-        tk = trim_token(tk);
-        
-        while (tk) {
-            dbg_token(tk);
-            tk = tk->next;
-        }
+        // tk = trim_token(tk);
+
+        // while (tk) {
+        //     dbg_token(tk);
+        //     tk = tk->next;
+        // }
+        emit_preprocessed_token(tk);
 
         return 0;
     }
