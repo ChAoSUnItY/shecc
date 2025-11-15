@@ -624,7 +624,7 @@ int ftell(FILE *stream)
 
 /* Minimum alignment for all memory allocations. */
 #define MIN_ALIGNMENT 8
-#define ALIGN_UP(val, align) (((val) + (align) -1) & ~((align) -1))
+#define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 
 typedef struct chunk {
     struct chunk *next, *prev;
