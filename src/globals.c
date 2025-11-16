@@ -6,10 +6,12 @@
  */
 
 #pragma once
+#ifndef __SHECC_
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 #include "defs.h"
 
@@ -1616,9 +1618,6 @@ void dbg_token(token_t *token)
         break;
     case T_backslash:
         name = "T_backslash";
-        break;
-    case T_inclusion_path:
-        name = "T_inclusion_path";
         break;
     default:
         name = "<unknown>";

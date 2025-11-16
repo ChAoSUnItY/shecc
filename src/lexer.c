@@ -5,7 +5,9 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
+#ifndef __SHECC_
 #include <stdbool.h>
+#endif
 
 #include "defs.h"
 #include "globals.c"
@@ -300,30 +302,6 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     char token_buffer[MAX_TOKEN_LEN], ch = peek(buf, 0);
 
     loc->pos = buf->size;
-
-    /* Special treatment on file inclusion path syntax */
-    if (prev && prev->kind == T_cppd_include && (ch == '<' || ch == '"')) {
-        int sz = 0;
-        char closed_ch = ch;
-
-        ch = read(buf);
-
-        while (ch && ch != closed_ch) {
-            token_buffer[sz++] = ch;
-            ch = read(buf);
-        }
-
-        if (!ch)
-            error_at("Unenclosed inclusion path", loc);
-
-        read(buf);
-        token_buffer[sz] = '\0';
-
-        token = new_token(T_inclusion_path, loc, sz + 2);
-        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
-        loc->column += sz + 2;
-        return token;
-    }
 
     if (ch == '#') {
         if (loc->column != 1)

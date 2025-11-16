@@ -8,6 +8,7 @@
 #include "defs.h"
 #include "globals.c"
 
+source_location_t synth_built_in_loc;
 hashmap_t *PRAGMA_ONCE;
 hashmap_t *MACROS;
 
@@ -199,6 +200,7 @@ token_t *trim_token(token_t *tk)
 }
 
 token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx);
+char *token_to_string(token_t *tk, char *dest);
 
 int pp_get_operator_prio(opcode_t op)
 {
@@ -720,7 +722,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             continue;
         }
         case T_cppd_include: {
-            char *inclusion_path;
+            char inclusion_path[MAX_LINE_LEN];
             token_t *file_tk = NULL;
             preprocess_ctx_t inclusion_ctx;
             inclusion_ctx.hide_set = ctx->hide_set;
@@ -728,8 +730,25 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             inclusion_ctx.macro_args = NULL;
             inclusion_ctx.trim_eof = true;
 
-            tk = lex_expect_token(tk, T_inclusion_path, true);
-            inclusion_path = tk->literal;
+            if (lex_peek_token(tk, T_string, true)) {
+                tk = lex_next_token(tk, true);
+                strcpy(inclusion_path, tk->literal);
+            } else {
+                int sz = 0;
+                char token_buffer[MAX_TOKEN_LEN], *literal;
+                tk = lex_expect_token(tk, T_lt, true);
+
+                while (!lex_peek_token(tk, T_gt, false)) {
+                    tk = lex_next_token(tk, false);
+                    literal = token_to_string(tk, token_buffer);
+
+                    strcpy(inclusion_path + sz, literal);
+                    sz += strlen(literal);
+                }
+
+                tk = lex_next_token(tk, false);
+            }
+
             tk = lex_expect_token(tk, T_newline, true);
             tk = lex_next_token(tk, false);
 
@@ -963,6 +982,12 @@ token_t *preprocess(token_t *tk)
     PRAGMA_ONCE = hashmap_create(16);
     MACROS = hashmap_create(16);
 
+    synth_built_in_loc.pos = 0;
+    synth_built_in_loc.len = 1;
+    synth_built_in_loc.column = 1;
+    synth_built_in_loc.line = 1;
+    synth_built_in_loc.filename = "<built-in>";
+
     macro_nt *macro = calloc(1, sizeof(macro_nt));
     macro->name = "__FILE__";
     macro->handler = file_macro_handler;
@@ -973,6 +998,11 @@ token_t *preprocess(token_t *tk)
     macro->handler = line_macro_handler;
     hashmap_put(MACROS, "__LINE__", macro);
 
+    macro = calloc(1, sizeof(macro_nt));
+    macro->name = "__SHECC__";
+    macro->replacement = new_token(T_numeric, &synth_built_in_loc, 1);
+    macro->replacement->literal = "1";
+
     tk = preprocess_internal(tk, &ctx);
 
     hashmap_free(MACROS);
@@ -980,256 +1010,203 @@ token_t *preprocess(token_t *tk)
     return tk;
 }
 
+char *token_to_string(token_t *tk, char *dest)
+{
+    switch (tk->kind) {
+    case T_eof:
+        return NULL;
+    case T_numeric:
+        return tk->literal;
+    case T_identifier:
+        return tk->literal;
+    case T_string:
+        snprintf(dest, MAX_TOKEN_LEN, "\"%s\"", tk->literal);
+        return dest;
+    case T_char:
+        snprintf(dest, MAX_TOKEN_LEN, "'%s'", tk->literal);
+        return dest;
+    case T_comma:
+        return ",";
+    case T_open_bracket:
+        return "(";
+    case T_close_bracket:
+        return ")";
+    case T_open_curly:
+        return "{";
+    case T_close_curly:
+        return "}";
+    case T_open_square:
+        return "[";
+    case T_close_square:
+        return "]";
+    case T_asterisk:
+        return "*";
+    case T_divide:
+        return "/";
+    case T_mod:
+        return "%";
+    case T_bit_or:
+        return "|";
+    case T_bit_xor:
+        return "^";
+    case T_bit_not:
+        return "~";
+    case T_log_and:
+        return "&&";
+    case T_log_or:
+        return "||";
+    case T_log_not:
+        return "!";
+    case T_lt:
+        return "<";
+    case T_gt:
+        return ">";
+    case T_le:
+        return "<=";
+    case T_ge:
+        return ">=";
+    case T_lshift:
+        return "<<";
+    case T_rshift:
+        return ">>";
+    case T_dot:
+        return ".";
+    case T_arrow:
+        return "->";
+    case T_plus:
+        return "+";
+    case T_minus:
+        return "-";
+    case T_minuseq:
+        return "-=";
+    case T_pluseq:
+        return "+=";
+    case T_asteriskeq:
+        return "*=";
+    case T_divideeq:
+        return "/=";
+    case T_modeq:
+        return "%=";
+    case T_lshifteq:
+        return "<<=";
+    case T_rshifteq:
+        return ">>=";
+    case T_xoreq:
+        return "^=";
+    case T_oreq:
+        return "|=";
+    case T_andeq:
+        return "&=";
+    case T_eq:
+        return "==";
+    case T_noteq:
+        return "!=";
+    case T_assign:
+        return "=";
+    case T_increment:
+        return "++";
+    case T_decrement:
+        return "--";
+    case T_question:
+        return "?";
+    case T_colon:
+        return ":";
+    case T_semicolon:
+        return ";";
+    case T_ampersand:
+        return "&";
+    case T_return:
+        return "return";
+    case T_if:
+        return "if";
+    case T_else:
+        return "else";
+    case T_while:
+        return "while";
+    case T_for:
+        return "for";
+    case T_do:
+        return "do";
+    case T_typedef:
+        return "typedef";
+    case T_enum:
+        return "enum";
+    case T_struct:
+        return "struct";
+    case T_union:
+        return "union";
+    case T_sizeof:
+        return "sizeof";
+    case T_elipsis:
+        return "...";
+    case T_switch:
+        return "switch";
+    case T_case:
+        return "case";
+    case T_break:
+        return "break";
+    case T_default:
+        return "default";
+    case T_continue:
+        return "continue";
+    case T_goto:
+        return "goto";
+    case T_const:
+        return "const";
+    case T_newline:
+        return "\n";
+    case T_backslash:
+        error_at(
+            "Internal error, backslash should be ommited after "
+            "preprocessing",
+            &tk->location);
+        break;
+    case T_whitespace: {
+        int i = 0;
+        for (; i < tk->location.len; i++)
+            dest[i] = ' ';
+        dest[i] = '\0';
+        return dest;
+    }
+    case T_tab:
+        return "\t";
+    case T_start:
+        // FIXME: Unused token kind
+        break;
+    case T_cppd_include:
+    case T_cppd_define:
+    case T_cppd_undef:
+    case T_cppd_error:
+    case T_cppd_if:
+    case T_cppd_elif:
+    case T_cppd_else:
+    case T_cppd_endif:
+    case T_cppd_ifdef:
+    case T_cppd_ifndef:
+    case T_cppd_pragma:
+        error_at(
+            "Internal error, preprocessor directives should be ommited "
+            "after preprocessing",
+            &tk->location);
+        break;
+    default:
+        error_at("Unknown token kind", &tk->location);
+        printf("UNKNOWN_TOKEN");
+        break;
+    }
+
+    return NULL;
+}
+
 void emit_preprocessed_token(token_t *tk)
 {
+    char token_buffer[MAX_TOKEN_LEN], *literal;
+
     while (tk) {
-        switch (tk->kind) {
-        case T_eof:
-            break;
-        case T_numeric:
-            printf("%s", tk->literal);
-            break;
-        case T_identifier:
-            printf("%s", tk->literal);
-            break;
-        case T_string:
-            printf("\"%s\"", tk->literal);
-            break;
-        case T_char:
-            printf("'%s'", tk->literal);
-            break;
-        case T_comma:
-            printf(",");
-            break;
-        case T_open_bracket:
-            printf("(");
-            break;
-        case T_close_bracket:
-            printf(")");
-            break;
-        case T_open_curly:
-            printf("{");
-            break;
-        case T_close_curly:
-            printf("}");
-            break;
-        case T_open_square:
-            printf("[");
-            break;
-        case T_close_square:
-            printf("]");
-            break;
-        case T_asterisk:
-            printf("*");
-            break;
-        case T_divide:
-            printf("/");
-            break;
-        case T_mod:
-            printf("%%");
-            break;
-        case T_bit_or:
-            printf("|");
-            break;
-        case T_bit_xor:
-            printf("^");
-            break;
-        case T_bit_not:
-            printf("~");
-            break;
-        case T_log_and:
-            printf("&&");
-            break;
-        case T_log_or:
-            printf("||");
-            break;
-        case T_log_not:
-            printf("!");
-            break;
-        case T_lt:
-            printf("<");
-            break;
-        case T_gt:
-            printf(">");
-            break;
-        case T_le:
-            printf("<=");
-            break;
-        case T_ge:
-            printf(">=");
-            break;
-        case T_lshift:
-            printf("<<");
-            break;
-        case T_rshift:
-            printf(">>");
-            break;
-        case T_dot:
-            printf(".");
-            break;
-        case T_arrow:
-            printf("->");
-            break;
-        case T_plus:
-            printf("+");
-            break;
-        case T_minus:
-            printf("-");
-            break;
-        case T_minuseq:
-            printf("-=");
-            break;
-        case T_pluseq:
-            printf("+=");
-            break;
-        case T_asteriskeq:
-            printf("*=");
-            break;
-        case T_divideeq:
-            printf("/=");
-            break;
-        case T_modeq:
-            printf("%%=");
-            break;
-        case T_lshifteq:
-            printf("<<=");
-            break;
-        case T_rshifteq:
-            printf(">>=");
-            break;
-        case T_xoreq:
-            printf("^=");
-            break;
-        case T_oreq:
-            printf("|=");
-            break;
-        case T_andeq:
-            printf("&=");
-            break;
-        case T_eq:
-            printf("==");
-            break;
-        case T_noteq:
-            printf("!=");
-            break;
-        case T_assign:
-            printf("=");
-            break;
-        case T_increment:
-            printf("++");
-            break;
-        case T_decrement:
-            printf("--");
-            break;
-        case T_question:
-            printf("?");
-            break;
-        case T_colon:
-            printf(":");
-            break;
-        case T_semicolon:
-            printf(";");
-            break;
-        case T_ampersand:
-            printf("&");
-            break;
-        case T_return:
-            printf("return");
-            break;
-        case T_if:
-            printf("if");
-            break;
-        case T_else:
-            printf("else");
-            break;
-        case T_while:
-            printf("while");
-            break;
-        case T_for:
-            printf("for");
-            break;
-        case T_do:
-            printf("do");
-            break;
-        case T_typedef:
-            printf("typedef");
-            break;
-        case T_enum:
-            printf("enum");
-            break;
-        case T_struct:
-            printf("struct");
-            break;
-        case T_union:
-            printf("union");
-            break;
-        case T_sizeof:
-            printf("sizeof");
-            break;
-        case T_elipsis:
-            printf("...");
-            break;
-        case T_switch:
-            printf("switch");
-            break;
-        case T_case:
-            printf("case");
-            break;
-        case T_break:
-            printf("break");
-            break;
-        case T_default:
-            printf("default");
-            break;
-        case T_continue:
-            printf("continue");
-            break;
-        case T_goto:
-            printf("goto");
-            break;
-        case T_const:
-            printf("const");
-            break;
-        case T_newline:
-            printf("\n");
-            break;
-        case T_backslash:
-            error_at(
-                "Internal error, backslash should be ommited after "
-                "preprocessing",
-                &tk->location);
-            break;
-        case T_whitespace:
-            for (int i = 0; i < tk->location.len; i++)
-                printf(" ");
-            break;
-        case T_tab:
-            printf("\t");
-            break;
-        case T_start:
-            // FIXME: Unused token kind
-            break;
-        case T_cppd_include:
-        case T_cppd_define:
-        case T_cppd_undef:
-        case T_cppd_error:
-        case T_cppd_if:
-        case T_cppd_elif:
-        case T_cppd_else:
-        case T_cppd_endif:
-        case T_cppd_ifdef:
-        case T_cppd_ifndef:
-        case T_cppd_pragma:
-            error_at(
-                "Internal error, preprocessor directives should be ommited "
-                "after preprocessing",
-                &tk->location);
-            break;
-        default:
-            error_at("Unknown token kind", &tk->location);
-            printf("UNKNOWN_TOKEN");
-            break;
-        }
+        literal = token_to_string(tk, token_buffer);
+
+        if (literal)
+            printf("%s", literal);
 
         tk = tk->next;
     }

@@ -200,8 +200,7 @@ typedef enum {
     T_newline,
     T_backslash,
     T_whitespace,
-    T_tab,
-    T_inclusion_path
+    T_tab
 } token_kind_t;
 
 /* Source location tracking for better error reporting */

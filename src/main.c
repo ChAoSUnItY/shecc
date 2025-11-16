@@ -5,10 +5,12 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
+#ifndef __SHECC_
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 /* Define target machine */
 #include "../config"
