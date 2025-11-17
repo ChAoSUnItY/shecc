@@ -916,10 +916,9 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             ci->ctx = CK_elif_then;
             tk = pp_read_constant_expr(tk, &included);
 
-            if (!ci->included && included) {
+            if (!ci->included && included)
                 ci->included = true;
-                tk = lex_expect_token(tk, T_newline, true);
-            } else
+            else
                 tk = skip_cond_incl(tk);
             continue;
         }
