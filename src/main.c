@@ -5,12 +5,10 @@
  * file "LICENSE" for information on usage and redistribution of this file.
  */
 
-#ifndef __SHECC_
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#endif
 
 /* Define target machine */
 #include "../config"
@@ -57,6 +55,8 @@ int main(int argc, char *argv[])
     bool expand_only = false;
     char *out = NULL;
     char *in = NULL;
+    token_stream_t *libc_token_stream, *token_stream;
+    token_t *tk;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--dump-ir"))
@@ -91,27 +91,30 @@ int main(int argc, char *argv[])
     /* initialize global objects */
     global_init();
 
+    /* include libc */
+    if (libc) {
+        libc_generate();
+        libc_token_stream = include_libc();
+    }
+
+    token_stream = lex_token_by_file(in);
+
+    /* concat libc's and input file's token stream */
+    if (libc) {
+        libc_token_stream->tail->next = token_stream->head;
+        token_stream = libc_token_stream;
+    }
+
+    tk = preprocess(token_stream->head);
+
     if (expand_only) {
-        token_t *tk = lex_token_by_file(in);
-
-        tk = preprocess(tk);
-        // tk = trim_token(tk);
-
-        // while (tk) {
-        //     dbg_token(tk);
-        //     tk = tk->next;
-        // }
         emit_preprocessed_token(tk);
 
         return 0;
     }
 
-    /* include libc */
-    if (libc)
-        libc_generate();
-
     /* load and parse source code into IR */
-    parse(in);
+    parse(tk);
 
     /* Compact arenas after parsing to free temporary parse structures */
     compact_all_arenas();

@@ -6,12 +6,10 @@
  */
 
 #pragma once
-#ifndef __SHECC_
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#endif
 
 #include "defs.h"
 
@@ -19,10 +17,7 @@
 char *intern_string(char *str);
 
 /* Lexer */
-char token_str[MAX_TOKEN_LEN];
-token_kind_t next_token;
-char next_char;
-bool skip_newline = true;
+token_t *cur_token;
 
 /* Token memory management */
 token_pool_t *TOKEN_POOL;
@@ -1129,7 +1124,7 @@ bool strbuf_extend(strbuf_t *src, int len)
     if (new_size < src->capacity)
         return true;
 
-    if (new_size > src->capacity << 1)
+    if (new_size > (src->capacity << 1))
         src->capacity = new_size;
     else
         src->capacity <<= 1;
@@ -1618,6 +1613,12 @@ void dbg_token(token_t *token)
         break;
     case T_backslash:
         name = "T_backslash";
+        break;
+    case T_whitespace:
+        name = "T_whitespace";
+        break;
+    case T_tab:
+        name = "T_tab";
         break;
     default:
         name = "<unknown>";

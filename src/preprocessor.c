@@ -14,7 +14,8 @@ hashmap_t *MACROS;
 
 token_t *lex_skip_space(token_t *tk)
 {
-    while (tk->next->kind == T_whitespace || tk->next->kind == T_tab)
+    while (tk->next &&
+           (tk->next->kind == T_whitespace || tk->next->kind == T_tab))
         tk = tk->next;
     return tk;
 }
@@ -175,30 +176,6 @@ typedef struct preprocess_ctx {
     bool trim_eof;
 } preprocess_ctx_t;
 
-/* Removes unnecessary tokens from token stream, e.g. whitespace */
-token_t *trim_token(token_t *tk)
-{
-    token_t head;
-    token_t *cur = &head;
-    head.next = tk;
-
-    while (cur->next) {
-        switch (cur->next->kind) {
-        case T_newline:
-        case T_backslash:
-        case T_whitespace:
-        case T_tab:
-            cur->next = cur->next->next;
-            break;
-        default:
-            cur = cur->next;
-            break;
-        }
-    }
-
-    return head.next;
-}
-
 token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx);
 char *token_to_string(token_t *tk, char *dest);
 
@@ -253,67 +230,69 @@ int pp_get_unary_operator_prio(opcode_t op)
 
 token_t *pp_get_operator(token_t *tk, opcode_t *op)
 {
-    switch (tk->kind) {
+    tk = lex_skip_space(tk);
+
+    switch (tk->next->kind) {
     case T_plus:
-        *op = OP_add;
+        op[0] = OP_add;
         break;
     case T_minus:
-        *op = OP_sub;
+        op[0] = OP_sub;
         break;
     case T_asterisk:
-        *op = OP_mul;
+        op[0] = OP_mul;
         break;
     case T_divide:
-        *op = OP_div;
+        op[0] = OP_div;
         break;
     case T_mod:
-        *op = OP_mod;
+        op[0] = OP_mod;
         break;
     case T_lshift:
-        *op = OP_lshift;
+        op[0] = OP_lshift;
         break;
     case T_rshift:
-        *op = OP_rshift;
+        op[0] = OP_rshift;
         break;
     case T_log_and:
-        *op = OP_log_and;
+        op[0] = OP_log_and;
         break;
     case T_log_or:
-        *op = OP_log_or;
+        op[0] = OP_log_or;
         break;
     case T_eq:
-        *op = OP_eq;
+        op[0] = OP_eq;
         break;
     case T_noteq:
-        *op = OP_neq;
+        op[0] = OP_neq;
         break;
     case T_lt:
-        *op = OP_lt;
+        op[0] = OP_lt;
         break;
     case T_le:
-        *op = OP_leq;
+        op[0] = OP_leq;
         break;
     case T_gt:
-        *op = OP_gt;
+        op[0] = OP_gt;
         break;
     case T_ge:
-        *op = OP_geq;
+        op[0] = OP_geq;
         break;
     case T_ampersand:
-        *op = OP_bit_and;
+        op[0] = OP_bit_and;
         break;
     case T_bit_or:
-        *op = OP_bit_or;
+        op[0] = OP_bit_or;
         break;
     case T_bit_xor:
-        *op = OP_bit_xor;
+        op[0] = OP_bit_xor;
         break;
     case T_question:
-        *op = OP_ternary;
+        op[0] = OP_ternary;
         break;
     default:
         /* Maybe it's an operand, we immediately return here. */
-        *op = OP_generic;
+        op[0] = OP_generic;
         return tk;
     }
     tk = lex_next_token(tk, true);
@@ -362,7 +341,7 @@ token_t *pp_read_constant_expr_operand(token_t *tk, int *val)
 {
     if (lex_peek_token(tk, T_numeric, true)) {
         tk = lex_next_token(tk, true);
-        *val = pp_read_numeric_constant(tk->literal);
+        val[0] = pp_read_numeric_constant(tk->literal);
         return tk;
     }
 
@@ -376,17 +355,33 @@ token_t *pp_read_constant_expr_operand(token_t *tk, int *val)
     if (lex_peek_token(tk, T_identifier, true)) {
         tk = lex_next_token(tk, true);
 
-
         if (!strcmp("defined", tk->literal)) {
             macro_nt *macro;
             tk = lex_expect_token(tk, T_open_bracket, true);
             tk = lex_expect_token(tk, T_identifier, true);
             macro = hashmap_get(MACROS, tk->literal);
-            *val = macro && !macro->is_disabled;
+            val[0] = macro && !macro->is_disabled;
             tk = lex_expect_token(tk, T_close_bracket, true);
         } else {
             /* Any identifier will fallback and evaluate as 0 */
-            *val = 0;
+            macro_nt *macro = hashmap_get(MACROS, tk->literal);
+
+            /* Disallow function-like macro to be expanded */
+            if (macro && !(macro->param_num > 0 || macro->is_variadic)) {
+                token_t *expanded_tk, *tmp;
+                preprocess_ctx_t ctx;
+                ctx.expanded_from = tk;
+                ctx.hide_set = NULL;
+                ctx.macro_args = NULL;
+                ctx.trim_eof = false;
+                expanded_tk = preprocess_internal(macro->replacement, &ctx);
+                tmp = tk->next;
+                tk->next = expanded_tk;
+                ctx.end_of_token->next = tmp;
+                return pp_read_constant_expr_operand(tk, val);
+            }
+
+            val[0] = 0;
         }
 
         return tk;
@@ -500,13 +495,16 @@ token_t *pp_read_constant_infix_expr(int precedence, token_t *tk, int *val)
         tk = pp_get_operator(tk, &op);
     }
 
-    *val = lhs;
+    val[0] = lhs;
     return tk;
 }
 
 token_t *pp_read_constant_expr(token_t *tk, int *val)
 {
-    return pp_read_constant_infix_expr(0, tk, val);
+    tk = pp_read_constant_infix_expr(0, tk, val);
+    /* advance to fully consume constant expression */
+    tk = lex_next_token(tk, true);
+    return tk;
 }
 
 token_t *skip_inner_cond_incl(token_t *tk)
@@ -578,6 +576,9 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (macro_arg_replcaement) {
                 /* TODO: We should consider ## here */
                 expansion_ctx.hide_set = ctx->hide_set;
+                expansion_ctx.macro_args =
+                    NULL; /* Don't take account of macro arguments, this might
+                             run into inifinite loop */
                 macro_arg_replcaement =
                     preprocess_internal(macro_arg_replcaement, &expansion_ctx);
                 cur->next = macro_arg_replcaement;
@@ -723,7 +724,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         }
         case T_cppd_include: {
             char inclusion_path[MAX_LINE_LEN];
-            token_t *file_tk = NULL;
+            token_stream_t *file_tks = NULL;
             preprocess_ctx_t inclusion_ctx;
             inclusion_ctx.hide_set = ctx->hide_set;
             inclusion_ctx.expanded_from = NULL;
@@ -733,6 +734,30 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (lex_peek_token(tk, T_string, true)) {
                 tk = lex_next_token(tk, true);
                 strcpy(inclusion_path, tk->literal);
+
+                /* normalize path */
+                char path[MAX_LINE_LEN];
+                const char *file = tk->location.filename;
+                int c = strlen(file) - 1;
+
+                while (c > 0 && file[c] != '/')
+                    c--;
+
+                if (c) {
+                    if (c >= MAX_LINE_LEN - 1)
+                        c = MAX_LINE_LEN - 2;
+
+                    memcpy(path, file, c);
+                    path[c] = '\0';
+                } else {
+                    path[0] = '.';
+                    path[1] = '\0';
+                    c = 1;
+                }
+
+                snprintf(path + c, MAX_LINE_LEN - c, "/%s", inclusion_path);
+                strncpy(inclusion_path, path, MAX_LINE_LEN - 1);
+                inclusion_path[MAX_LINE_LEN - 1] = '\0';
             } else {
                 int sz = 0;
                 char token_buffer[MAX_TOKEN_LEN], *literal;
@@ -747,6 +772,12 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                 }
 
                 tk = lex_next_token(tk, false);
+                /* FIXME: We ignore #include <...> at this moment, since
+                 * all libc functions are included done by inlining.
+                 */
+                tk = lex_expect_token(tk, T_newline, true);
+                tk = lex_next_token(tk, false);
+                continue;
             }
 
             tk = lex_expect_token(tk, T_newline, true);
@@ -755,9 +786,9 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (hashmap_contains(PRAGMA_ONCE, inclusion_path))
                 continue;
 
-            file_tk = lex_token_by_file(inclusion_path);
-            cur->next = preprocess_internal(file_tk, &inclusion_ctx);
-
+            file_tks =
+                lex_token_by_file(arena_strdup(TOKEN_ARENA, inclusion_path));
+            cur->next = preprocess_internal(file_tks->head, &inclusion_ctx);
             cur = inclusion_ctx.end_of_token;
             continue;
         }
@@ -852,16 +883,14 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
 
             if (!defined)
                 tk = skip_cond_incl(tk);
-            else
-                tk = lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_ifdef: {
-            token_t *cond_tk = tk;
+            token_t *kw_tk = tk;
             tk = lex_expect_token(tk, T_identifier, true);
             bool defined = hashmap_contains(MACROS, tk->literal);
 
-            ci = push_cond(ci, cond_tk, defined);
+            ci = push_cond(ci, kw_tk, defined);
             if (!defined)
                 tk = skip_cond_incl(tk);
             else
@@ -869,11 +898,11 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             continue;
         }
         case T_cppd_ifndef: {
-            token_t *cond_tk = tk;
+            token_t *kw_tk = tk;
             tk = lex_expect_token(tk, T_identifier, true);
             bool defined = hashmap_contains(MACROS, tk->literal);
 
-            ci = push_cond(ci, cond_tk, !defined);
+            ci = push_cond(ci, kw_tk, !defined);
             if (defined)
                 tk = skip_cond_incl(tk);
             else
@@ -882,7 +911,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         }
         case T_cppd_elif: {
             if (!ci || ci->ctx == CK_else_then)
-                error_at("Stray #elif", &ci->tk->location);
+                error_at("Stray #elif", &tk->location);
             int included;
             ci->ctx = CK_elif_then;
             tk = pp_read_constant_expr(tk, &included);
@@ -896,13 +925,12 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         }
         case T_cppd_else: {
             if (!ci || ci->ctx == CK_else_then)
-                error_at("Stray #else", &ci->tk->location);
+                error_at("Stray #else", &tk->location);
             ci->ctx = CK_else_then;
+            tk = lex_expect_token(tk, T_newline, true);
 
             if (ci->included)
                 tk = skip_cond_incl(tk);
-            else
-                tk = lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_endif: {
@@ -998,10 +1026,19 @@ token_t *preprocess(token_t *tk)
     macro->handler = line_macro_handler;
     hashmap_put(MACROS, "__LINE__", macro);
 
+    /* architecture defines */
+    macro = calloc(1, sizeof(macro_nt));
+    macro->name = ARCH_PREDEFINED;
+    macro->replacement = new_token(T_numeric, &synth_built_in_loc, 1);
+    macro->replacement->literal = "1";
+    hashmap_put(MACROS, ARCH_PREDEFINED, macro);
+
+    /* shecc run-time defines */
     macro = calloc(1, sizeof(macro_nt));
     macro->name = "__SHECC__";
     macro->replacement = new_token(T_numeric, &synth_built_in_loc, 1);
     macro->replacement->literal = "1";
+    hashmap_put(MACROS, "__SHECC__", macro);
 
     tk = preprocess_internal(tk, &ctx);
 
@@ -1014,6 +1051,11 @@ char *token_to_string(token_t *tk, char *dest)
 {
     switch (tk->kind) {
     case T_eof:
+        if (tk->next)
+            error_at(
+                "Internal error, token_to_string does not expect eof token in "
+                "the middle of token stream",
+                &tk->location);
         return NULL;
     case T_numeric:
         return tk->literal;
