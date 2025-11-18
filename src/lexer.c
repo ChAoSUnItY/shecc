@@ -148,62 +148,6 @@ void lexer_cleanup()
     keyword_tokens_storage = NULL;
 }
 
-bool is_whitespace(char c)
-{
-    return c == ' ' || c == '\t';
-}
-
-bool is_newline(char c)
-{
-    return c == '\r' || c == '\n';
-}
-
-/* is it alphabet, number or '_'? */
-bool is_alnum(char c)
-{
-    return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || (c == '_'));
-}
-
-bool is_digit(char c)
-{
-    return c >= '0' && c <= '9';
-}
-
-bool is_hex(char c)
-{
-    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-           (c >= 'A' && c <= 'F');
-}
-
-int hex_digit_value(char c)
-{
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
-    return -1;
-}
-
-bool is_numeric(char buffer[])
-{
-    bool hex = false;
-    int size = strlen(buffer);
-
-    if (size > 2 && buffer[0] == '0' && (buffer[1] | 32) == 'x')
-        hex = true;
-
-    for (int i = hex ? 2 : 0; i < size; i++) {
-        if (hex && !is_hex(buffer[i]))
-            return false;
-        if (!hex && !is_digit(buffer[i]))
-            return false;
-    }
-    return true;
-}
-
 char peek_char(strbuf_t *buf, int offset)
 {
     return buf->elements[buf->size + offset];
@@ -557,82 +501,13 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '"') {
-        int start_pos = buf->size;
         int sz = 0;
         bool special = false;
 
         ch = read_char(buf);
         while (ch != '"' || special) {
             if ((sz > 0) && (token_buffer[sz - 1] == '\\')) {
-                if (ch == 'n')
-                    token_buffer[sz - 1] = '\n';
-                else if (ch == '"')
-                    token_buffer[sz - 1] = '"';
-                else if (ch == 'r')
-                    token_buffer[sz - 1] = '\r';
-                else if (ch == '\'')
-                    token_buffer[sz - 1] = '\'';
-                else if (ch == 't')
-                    token_buffer[sz - 1] = '\t';
-                else if (ch == '\\')
-                    token_buffer[sz - 1] = '\\';
-                else if (ch == '0')
-                    token_buffer[sz - 1] = '\0';
-                else if (ch == 'a')
-                    token_buffer[sz - 1] = '\a';
-                else if (ch == 'b')
-                    token_buffer[sz - 1] = '\b';
-                else if (ch == 'v')
-                    token_buffer[sz - 1] = '\v';
-                else if (ch == 'f')
-                    token_buffer[sz - 1] = '\f';
-                else if (ch == 'e') /* GNU extension: ESC character */
-                    token_buffer[sz - 1] = 27;
-                else if (ch == '?')
-                    token_buffer[sz - 1] = '?';
-                else if (ch == 'x') {
-                    /* Hexadecimal escape sequence \xHH */
-                    ch = read_char(buf);
-                    if (!is_hex(ch)) {
-                        loc->pos += sz;
-                        loc->len = 3;
-                        error_at("Invalid hex escape sequence", loc);
-                    }
-                    int value = 0;
-                    int count = 0;
-                    while (is_hex(ch) && count < 2) {
-                        value = (value << 4) + hex_digit_value(ch);
-                        ch = read_char(buf);
-                        count++;
-                    }
-                    token_buffer[sz - 1] = value;
-                    /* Back up one character as we read one too many */
-                    buf->size--;
-                    ch = buf->elements[buf->size];
-                } else if (ch >= '0' && ch <= '7') {
-                    /* Octal escape sequence \nnn */
-                    int value = ch - '0';
-                    ch = read_char(buf);
-                    if (ch >= '0' && ch <= '7') {
-                        value = (value << 3) + (ch - '0');
-                        ch = read_char(buf);
-                        if (ch >= '0' && ch <= '7') {
-                            value = (value << 3) + (ch - '0');
-                        } else {
-                            /* Back up one character */
-                            buf->size--;
-                            ch = buf->elements[buf->size];
-                        }
-                    } else {
-                        /* Back up one character */
-                        buf->size--;
-                        ch = buf->elements[buf->size];
-                    }
-                    token_buffer[sz - 1] = value;
-                } else {
-                    /* Handle unknown escapes gracefully */
-                    token_buffer[sz - 1] = ch;
-                }
+                token_buffer[sz++] = ch;
             } else {
                 if (sz >= MAX_TOKEN_LEN - 1) {
                     loc->len = sz + 1;
@@ -653,100 +528,41 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
         read_char(buf);
         token = new_token(T_string, loc, sz + 2);
         token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
-        loc->column += buf->size - start_pos;
+        loc->column += sz + 2;
         return token;
     }
 
     if (ch == '\'') {
-        int start_pos = buf->size;
+        int sz = 0;
+        bool escaped = false;
 
         ch = read_char(buf);
         if (ch == '\\') {
+            token_buffer[sz++] = ch;
             ch = read_char(buf);
-            if (ch == 'n')
-                token_buffer[0] = '\n';
-            else if (ch == 'r')
-                token_buffer[0] = '\r';
-            else if (ch == '\'')
-                token_buffer[0] = '\'';
-            else if (ch == '"')
-                token_buffer[0] = '"';
-            else if (ch == 't')
-                token_buffer[0] = '\t';
-            else if (ch == '\\')
-                token_buffer[0] = '\\';
-            else if (ch == '0')
-                token_buffer[0] = '\0';
-            else if (ch == 'a')
-                token_buffer[0] = '\a';
-            else if (ch == 'b')
-                token_buffer[0] = '\b';
-            else if (ch == 'v')
-                token_buffer[0] = '\v';
-            else if (ch == 'f')
-                token_buffer[0] = '\f';
-            else if (ch == 'e') /* GNU extension: ESC character */
-                token_buffer[0] = 27;
-            else if (ch == '?')
-                token_buffer[0] = '?';
-            else if (ch == 'x') {
-                /* Hexadecimal escape sequence \xHH */
-                ch = read_char(buf);
-                if (!is_hex(ch)) {
-                    loc->pos++;
-                    loc->len = 3;
-                    error_at("Invalid hex escape sequence", loc);
-                }
-                int value = 0;
-                int count = 0;
-                while (is_hex(ch) && count < 2) {
-                    value = (value << 4) + hex_digit_value(ch);
-                    ch = read_char(buf);
-                    count++;
-                }
-                token_buffer[0] = value;
-                /* Back up one character as we read one too many */
-                buf->size--;
-                ch = buf->elements[buf->size];
-            } else if (ch >= '0' && ch <= '7') {
-                /* Octal escape sequence \nnn */
-                int value = ch - '0';
-                ch = read_char(buf);
-                if (ch >= '0' && ch <= '7') {
-                    value = (value << 3) + (ch - '0');
-                    ch = read_char(buf);
-                    if (ch >= '0' && ch <= '7') {
-                        value = (value << 3) + (ch - '0');
-                    } else {
-                        /* Back up one character */
-                        buf->size--;
-                        ch = buf->elements[buf->size];
-                    }
-                } else {
-                    /* Back up one character */
-                    buf->size--;
-                    ch = buf->elements[buf->size];
-                }
-                token_buffer[0] = value;
-            } else {
-                /* Handle unknown escapes gracefully */
-                token_buffer[0] = ch;
-            }
-        } else {
-            token_buffer[0] = ch;
-        }
-        token_buffer[1] = '\0';
 
-        ch = read_char(buf);
+            do {
+                token_buffer[sz++] = ch;
+                ch = read_char(buf);
+                escaped = true;
+            } while (ch && ch != '\'');
+        } else {
+            token_buffer[sz++] = ch;
+        }
+        token_buffer[sz] = '\0';
+
+        if (!escaped)
+            ch = read_char(buf);
+
         if (ch != '\'') {
             loc->len = 2;
             error_at("Unenclosed character literal", loc);
         }
 
         read_char(buf);
-        token = new_token(T_char, loc, 3);
+        token = new_token(T_char, loc, sz + 2);
         token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
-        loc->column += buf->size - start_pos;
+        loc->column = sz + 2;
         return token;
     }
 

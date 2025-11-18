@@ -451,12 +451,13 @@ var_t *parse_global_constant_value(block_t *parent, basic_block_t **bb)
         val->init_val = num_val;
         add_insn(parent, *bb, OP_load_constant, val, NULL, NULL, 0, NULL);
     } else if (lex_peek(T_char, NULL)) {
-        char chtok[5];
+        char chtok[MAX_TOKEN_LEN], unescaped[MAX_TOKEN_LEN];
         lex_ident(T_char, chtok);
+        unescape_string(chtok, unescaped, MAX_TOKEN_LEN);
 
         val = require_typed_var(parent, TY_char);
         gen_name_to(val->var_name);
-        val->init_val = chtok[0];
+        val->init_val = unescaped[0];
         add_insn(parent, *bb, OP_load_constant, val, NULL, NULL, 0, NULL);
     } else if (lex_peek(T_string, NULL)) {
         lex_accept(T_string);
@@ -1124,23 +1125,26 @@ void read_parameter_list_decl(func_t *func, bool anon)
 void read_literal_param(block_t *parent, basic_block_t *bb)
 {
     char literal[MAX_TOKEN_LEN];
+    char unescaped[MAX_TOKEN_LEN];
     char combined[MAX_TOKEN_LEN];
     int combined_len = 0;
 
     /* Read first string literal */
     lex_ident(T_string, literal);
-    strcpy(combined, literal);
-    combined_len = strlen(literal);
+    unescape_string(literal, unescaped, MAX_TOKEN_LEN);
+    strcpy(combined, unescaped);
+    combined_len = strlen(unescaped);
 
     /* Check for adjacent string literals and concatenate them */
     while (lex_peek(T_string, NULL)) {
         lex_ident(T_string, literal);
-        int literal_len = strlen(literal);
-        if (combined_len + literal_len >= MAX_TOKEN_LEN - 1)
+        unescape_string(literal, unescaped, MAX_TOKEN_LEN);
+        int unescaped_len = strlen(unescaped);
+        if (combined_len + unescaped_len >= MAX_TOKEN_LEN - 1)
             error("Concatenated string literal too long");
 
         strcpy(combined + combined_len, literal);
-        combined_len += literal_len;
+        combined_len += unescaped_len;
     }
 
     const int index = write_symbol(combined);
@@ -1220,13 +1224,14 @@ void read_numeric_param(block_t *parent, basic_block_t *bb, bool is_neg)
 
 void read_char_param(block_t *parent, basic_block_t *bb)
 {
-    char token[5];
+    char literal[MAX_TOKEN_LEN], unescaped[MAX_TOKEN_LEN];
 
-    lex_ident(T_char, token);
+    lex_ident(T_char, literal);
+    unescape_string(literal, unescaped, MAX_TOKEN_LEN);
 
     var_t *vd = require_typed_var(parent, TY_char);
     gen_name_to(vd->var_name);
-    vd->init_val = token[0];
+    vd->init_val = unescaped[0];
     opstack_push(vd);
     add_insn(parent, bb, OP_load_constant, vd, NULL, NULL, 0, NULL);
 }
@@ -3273,7 +3278,7 @@ int read_primary_constant(void)
 {
     /* return signed constant */
     int isneg = 0, res;
-    char buffer[10];
+    char buffer[MAX_TOKEN_LEN];
     if (lex_accept(T_minus))
         isneg = 1;
     if (lex_accept(T_open_bracket)) {
@@ -3283,7 +3288,9 @@ int read_primary_constant(void)
         res = read_numeric_constant(buffer);
         lex_expect(T_numeric);
     } else if (lex_peek(T_char, buffer)) {
-        res = buffer[0];
+        char unescaped[MAX_TOKEN_LEN];
+        unescape_string(buffer, unescaped, MAX_TOKEN_LEN);
+        res = unescaped[0];
         lex_expect(T_char);
     } else
         error("Invalid value after assignment");
@@ -3604,7 +3611,9 @@ basic_block_t *read_body_statement(block_t *parent, basic_block_t *bb)
                     case_val = read_numeric_constant(token);
                     lex_expect(T_numeric);
                 } else if (lex_peek(T_char, token)) {
-                    case_val = token[0];
+                    char unescaped[MAX_TOKEN_LEN];
+                    unescape_string(token, unescaped, MAX_TOKEN_LEN);
+                    case_val = unescaped[0];
                     lex_expect(T_char);
                 } else if (lex_peek(T_identifier, token)) {
                     constant_t *cd = find_constant(token);

@@ -667,6 +667,137 @@ char *intern_string(char *str)
     return interned;
 }
 
+int hex_digit_value(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+int unescape_string(const char *input, char *output, int output_size)
+{
+    if (!input || !output || output_size == 0)
+        return -1;
+
+    int i = 0, j = 0;
+
+    while (input[i] != '\0' && j < output_size - 1) {
+        if (input[i] == '\\') {
+            i++;
+
+            switch (input[i]) {
+            case 'a':
+                output[j++] = '\a';
+                i++;
+                break;
+            case 'b':
+                output[j++] = '\b';
+                i++;
+                break;
+            case 'f':
+                output[j++] = '\f';
+                i++;
+                break;
+            case 'e':
+                output[j++] = 23;
+                i++;
+                break;
+            case 'n':
+                output[j++] = '\n';
+                i++;
+                break;
+            case 'r':
+                output[j++] = '\r';
+                i++;
+                break;
+            case 't':
+                output[j++] = '\t';
+                i++;
+                break;
+            case 'v':
+                output[j++] = '\v';
+                i++;
+                break;
+            case '\\':
+                output[j++] = '\\';
+                i++;
+                break;
+            case '\'':
+                output[j++] = '\'';
+                i++;
+                break;
+            case '"':
+                output[j++] = '"';
+                i++;
+                break;
+            case '?':
+                output[j++] = '\?';
+                i++;
+                break;
+            case 'x': {
+                /* Hexadecimal escape sequence: \xhh */
+                i++;  // Skip 'x'
+
+                if (!is_hex(input[i]))
+                    return -1;
+
+                int value = 0;
+
+                while (is_hex(input[i])) {
+                    value = value * 16 + hex_digit_value(input[i]);
+                    i++;
+                }
+
+                output[j++] = (char) value;
+                break;
+            }
+
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7': {
+                /* Octal escape sequence: \ooo (up to 3 digits) */
+                int value = 0;
+                int digit_count = 0;
+
+                while (input[i] >= '0' && input[i] <= '7' && digit_count < 3) {
+                    value = value * 8 + (input[i] - '0');
+                    i++;
+                    digit_count++;
+                }
+
+                output[j++] = (char) value;
+                break;
+            }
+            default:
+                /* Unknown escape sequence - treat as literal character */
+                output[j++] = input[i];
+                i++;
+                break;
+            }
+        } else {
+            /* Regular characters */
+            output[j++] = input[i++];
+        }
+    }
+
+    output[j] = '\0';
+
+    // Check if we ran out of output space
+    if (input[i] != '\0')
+        return -1;
+
+    return j;
+}
+
 type_t *add_type(void)
 {
     if (types_idx >= MAX_TYPES) {

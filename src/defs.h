@@ -10,9 +10,19 @@
 
 /* definitions */
 
+/* Common macro functions */
+#define is_whitespace(c) (c == ' ' || c == '\t')
+#define is_newline(c) (c == '\r' || c == '\n')
+#define is_alnum(c) ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || \
+            (c >= '0' && c <= '9') || (c == '_'))
+#define is_digit(c) ((c >= '0' && c <= '9'))
+#define is_hex(c) (is_digit(c) || (c >= 'a' && c <= 'f') || \
+           (c >= 'A' && c <= 'F'))
+
 /* Limitations */
 #define MAX_TOKEN_LEN 256
 #define MAX_ID_LEN 64
+#define MAX_ESCAPED_CHAR_LEN 5
 #define MAX_LINE_LEN 256
 #define MAX_VAR_LEN 32
 #define MAX_TYPE_LEN 32
