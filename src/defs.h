@@ -15,11 +15,12 @@
 /* Common macro functions */
 #define is_whitespace(c) (c == ' ' || c == '\t')
 #define is_newline(c) (c == '\r' || c == '\n')
-#define is_alnum(c) ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || \
-            (c >= '0' && c <= '9') || (c == '_'))
+#define is_alnum(c)                                      \
+    ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || \
+     (c >= '0' && c <= '9') || (c == '_'))
 #define is_digit(c) ((c >= '0' && c <= '9'))
-#define is_hex(c) (is_digit(c) || (c >= 'a' && c <= 'f') || \
-           (c >= 'A' && c <= 'F'))
+#define is_hex(c) \
+    (is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
 
 /* Limitations */
 #define MAX_TOKEN_LEN 256
