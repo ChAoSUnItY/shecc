@@ -27,11 +27,7 @@ hashmap_t *KEYWORD_MAP = NULL;
 token_kind_t *directive_tokens_storage = NULL;
 token_kind_t *keyword_tokens_storage = NULL;
 
-typedef struct token_stream {
-    token_t *head;
-    token_t *tail;
-} token_stream_t;
-
+/* TOKEN_CACHE maps filename to the corresponding computed token stream */
 hashmap_t *TOKEN_CACHE = NULL;
 strbuf_t *LIBC_SRC;
 
@@ -157,9 +153,6 @@ bool is_whitespace(char c)
     return c == ' ' || c == '\t';
 }
 
-char peek_char(int offset);
-
-
 bool is_newline(char c)
 {
     return c == '\r' || c == '\n';
@@ -211,19 +204,12 @@ bool is_numeric(char buffer[])
     return true;
 }
 
-/* NEW */
-char peek(strbuf_t *buf, int offset)
+char peek_char(strbuf_t *buf, int offset)
 {
     return buf->elements[buf->size + offset];
 }
 
-char read_offset(strbuf_t *buf, int offset)
-{
-    buf->size += offset;
-    return buf->elements[buf->size];
-}
-
-char read(strbuf_t *buf)
+char read_char(strbuf_t *buf)
 {
     buf->size++;
     return buf->elements[buf->size];
@@ -276,10 +262,10 @@ token_t *new_token(token_kind_t kind, source_location_t *loc, int len)
     return token;
 }
 
-token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
+token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
 {
     token_t *token;
-    char token_buffer[MAX_TOKEN_LEN], ch = peek(buf, 0);
+    char token_buffer[MAX_TOKEN_LEN], ch = peek_char(buf, 0);
 
     loc->pos = buf->size;
 
@@ -295,7 +281,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                 error_at("Token too long", loc);
             }
             token_buffer[sz++] = ch;
-            ch = read(buf);
+            ch = read_char(buf);
         } while (is_alnum(ch));
         token_buffer[sz] = '\0';
 
@@ -311,14 +297,14 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '\\') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_backslash, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '\n') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_newline, loc, 1);
         loc->line++;
         loc->column = 1;
@@ -326,7 +312,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '/') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '*') {
             /* C-style comment */
@@ -348,7 +334,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                         pos++;
                         loc->column += 2;
                         buf->size = pos;
-                        return lex_token_nt(buf, loc, prev);
+                        return lex_token(buf, loc, prev);
                     }
                 }
 
@@ -371,11 +357,11 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             } while (ch && !is_newline(ch));
             loc->column += pos - buf->size + 1;
             buf->size = pos;
-            return lex_token_nt(buf, loc, prev);
+            return lex_token(buf, loc, prev);
         }
 
         if (ch == '=') {
-            ch = read(buf);
+            ch = read_char(buf);
             token = new_token(T_divideeq, loc, 2);
             loc->column += 2;
             return token;
@@ -390,7 +376,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
         /* Compacts sequence of whitespace together */
         int sz = 1;
 
-        while (read(buf) == ' ')
+        while (read_char(buf) == ' ')
             sz++;
 
         token = new_token(T_whitespace, loc, sz);
@@ -399,14 +385,14 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '\t') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_tab, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '\0') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_eof, loc, 1);
         loc->column++;
         return token;
@@ -415,7 +401,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     if (is_digit(ch)) {
         int sz = 0;
         token_buffer[sz++] = ch;
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (token_buffer[0] == '0' && ((ch | 32) == 'x')) {
             /* Hexadecimal: starts with 0x or 0X */
@@ -425,7 +411,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             }
             token_buffer[sz++] = ch;
 
-            ch = read(buf);
+            ch = read_char(buf);
             if (!is_hex(ch)) {
                 loc->len = 3;
                 error_at("Invalid hex literal: expected hex digit after 0x",
@@ -438,7 +424,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     error_at("Token too long", loc);
                 }
                 token_buffer[sz++] = ch;
-                ch = read(buf);
+                ch = read_char(buf);
             } while (is_hex(ch));
 
         } else if (token_buffer[0] == '0' && ((ch | 32) == 'b')) {
@@ -449,7 +435,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             }
             token_buffer[sz++] = ch;
 
-            ch = read(buf);
+            ch = read_char(buf);
             if (ch != '0' && ch != '1') {
                 loc->len = 3;
                 error_at("Binary literal expects 0 or 1 after 0b", loc);
@@ -461,7 +447,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     error_at("Token too long", loc);
                 }
                 token_buffer[sz++] = ch;
-                ch = read(buf);
+                ch = read_char(buf);
             } while (ch == '0' || ch == '1');
 
         } else if (token_buffer[0] == '0') {
@@ -477,7 +463,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     error_at("Token too long", loc);
                 }
                 token_buffer[sz++] = ch;
-                ch = read(buf);
+                ch = read_char(buf);
             }
 
         } else {
@@ -488,7 +474,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     error_at("Token too long", loc);
                 }
                 token_buffer[sz++] = ch;
-                ch = read(buf);
+                ch = read_char(buf);
             }
         }
 
@@ -500,59 +486,59 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '(') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_open_bracket, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == ')') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_close_bracket, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '{') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_open_curly, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '}') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_close_curly, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '[') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_open_square, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == ']') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_close_square, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == ',') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_comma, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '^') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            ch = read(buf);
+            ch = read_char(buf);
             token = new_token(T_xoreq, loc, 2);
             loc->column += 2;
             return token;
@@ -564,7 +550,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '~') {
-        ch = read(buf);
+        ch = read_char(buf);
         token = new_token(T_bit_not, loc, 1);
         loc->column++;
         return token;
@@ -575,7 +561,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
         int sz = 0;
         bool special = false;
 
-        ch = read(buf);
+        ch = read_char(buf);
         while (ch != '"' || special) {
             if ((sz > 0) && (token_buffer[sz - 1] == '\\')) {
                 if (ch == 'n')
@@ -606,7 +592,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     token_buffer[sz - 1] = '?';
                 else if (ch == 'x') {
                     /* Hexadecimal escape sequence \xHH */
-                    ch = read(buf);
+                    ch = read_char(buf);
                     if (!is_hex(ch)) {
                         loc->pos += sz;
                         loc->len = 3;
@@ -616,7 +602,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                     int count = 0;
                     while (is_hex(ch) && count < 2) {
                         value = (value << 4) + hex_digit_value(ch);
-                        ch = read(buf);
+                        ch = read_char(buf);
                         count++;
                     }
                     token_buffer[sz - 1] = value;
@@ -626,10 +612,10 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                 } else if (ch >= '0' && ch <= '7') {
                     /* Octal escape sequence \nnn */
                     int value = ch - '0';
-                    ch = read(buf);
+                    ch = read_char(buf);
                     if (ch >= '0' && ch <= '7') {
                         value = (value << 3) + (ch - '0');
-                        ch = read(buf);
+                        ch = read_char(buf);
                         if (ch >= '0' && ch <= '7') {
                             value = (value << 3) + (ch - '0');
                         } else {
@@ -660,11 +646,11 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             else
                 special = false;
 
-            ch = read(buf);
+            ch = read_char(buf);
         }
         token_buffer[sz] = '\0';
 
-        read(buf);
+        read_char(buf);
         token = new_token(T_string, loc, sz + 2);
         token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
         loc->column += buf->size - start_pos;
@@ -674,9 +660,9 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     if (ch == '\'') {
         int start_pos = buf->size;
 
-        ch = read(buf);
+        ch = read_char(buf);
         if (ch == '\\') {
-            ch = read(buf);
+            ch = read_char(buf);
             if (ch == 'n')
                 token_buffer[0] = '\n';
             else if (ch == 'r')
@@ -705,7 +691,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                 token_buffer[0] = '?';
             else if (ch == 'x') {
                 /* Hexadecimal escape sequence \xHH */
-                ch = read(buf);
+                ch = read_char(buf);
                 if (!is_hex(ch)) {
                     loc->pos++;
                     loc->len = 3;
@@ -715,7 +701,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                 int count = 0;
                 while (is_hex(ch) && count < 2) {
                     value = (value << 4) + hex_digit_value(ch);
-                    ch = read(buf);
+                    ch = read_char(buf);
                     count++;
                 }
                 token_buffer[0] = value;
@@ -725,10 +711,10 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
             } else if (ch >= '0' && ch <= '7') {
                 /* Octal escape sequence \nnn */
                 int value = ch - '0';
-                ch = read(buf);
+                ch = read_char(buf);
                 if (ch >= '0' && ch <= '7') {
                     value = (value << 3) + (ch - '0');
-                    ch = read(buf);
+                    ch = read_char(buf);
                     if (ch >= '0' && ch <= '7') {
                         value = (value << 3) + (ch - '0');
                     } else {
@@ -751,13 +737,13 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
         }
         token_buffer[1] = '\0';
 
-        ch = read(buf);
+        ch = read_char(buf);
         if (ch != '\'') {
             loc->len = 2;
             error_at("Unenclosed character literal", loc);
         }
 
-        read(buf);
+        read_char(buf);
         token = new_token(T_char, loc, 3);
         token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
         loc->column += buf->size - start_pos;
@@ -765,10 +751,10 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '*') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_asteriskeq, loc, 2);
             loc->column += 2;
             return token;
@@ -780,17 +766,17 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '&') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '&') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_log_and, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_andeq, loc, 2);
             loc->column += 2;
             return token;
@@ -802,17 +788,17 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '|') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '|') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_log_or, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_oreq, loc, 2);
             loc->column += 2;
             return token;
@@ -824,20 +810,20 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '<') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_le, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '<') {
-            ch = read(buf);
+            ch = read_char(buf);
 
             if (ch == '=') {
-                read(buf);
+                read_char(buf);
                 token = new_token(T_lshifteq, loc, 3);
                 loc->column += 3;
                 return token;
@@ -854,10 +840,10 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '%') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_modeq, loc, 2);
             loc->column += 2;
             return token;
@@ -869,20 +855,20 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '>') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_ge, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '>') {
-            ch = read(buf);
+            ch = read_char(buf);
 
             if (ch == '=') {
-                read(buf);
+                read_char(buf);
                 token = new_token(T_rshifteq, loc, 3);
                 loc->column += 3;
                 return token;
@@ -899,10 +885,10 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '!') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_noteq, loc, 2);
             loc->column += 2;
             return token;
@@ -914,9 +900,9 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '.') {
-        ch = read(buf);
+        ch = read_char(buf);
 
-        if (ch == '.' && peek(buf, 1) == '.') {
+        if (ch == '.' && peek_char(buf, 1) == '.') {
             buf->size += 2;
             token = new_token(T_elipsis, loc, 3);
             loc->column += 3;
@@ -929,24 +915,24 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '-') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '>') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_arrow, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '-') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_decrement, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_minuseq, loc, 2);
             loc->column += 2;
             return token;
@@ -958,17 +944,17 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == '+') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '+') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_increment, loc, 2);
             loc->column += 2;
             return token;
         }
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_pluseq, loc, 2);
             loc->column += 2;
             return token;
@@ -980,31 +966,31 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
     }
 
     if (ch == ';') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_semicolon, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '?') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_question, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == ':') {
-        read(buf);
+        read_char(buf);
         token = new_token(T_colon, loc, 1);
         loc->column++;
         return token;
     }
 
     if (ch == '=') {
-        ch = read(buf);
+        ch = read_char(buf);
 
         if (ch == '=') {
-            read(buf);
+            read_char(buf);
             token = new_token(T_eq, loc, 2);
             loc->column += 2;
             return token;
@@ -1023,7 +1009,7 @@ token_t *lex_token_nt(strbuf_t *buf, source_location_t *loc, token_t *prev)
                 error_at("Token too long", loc);
             }
             token_buffer[sz++] = ch;
-            ch = read(buf);
+            ch = read_char(buf);
         } while (is_alnum(ch));
         token_buffer[sz] = 0;
 
@@ -1147,7 +1133,7 @@ token_stream_t *lex_token_by_file(char *filename)
     buf->size = 0;
 
     while (buf->size < buf->capacity) {
-        cur = lex_token_nt(buf, &loc, prev);
+        cur = lex_token(buf, &loc, prev);
 
         if (cur->kind != T_whitespace && cur->kind != T_tab &&
             cur->kind != T_eof)
@@ -1208,7 +1194,7 @@ token_stream_t *include_libc()
     buf->size = 0;
 
     while (buf->size < buf->capacity) {
-        cur = lex_token_nt(buf, &loc, prev);
+        cur = lex_token(buf, &loc, prev);
 
         if (cur->kind != T_whitespace && cur->kind != T_tab &&
             cur->kind != T_eof)
@@ -1260,7 +1246,7 @@ void skip_unused_token(void)
 }
 
 /* Lex next token with aliasing enabled */
-token_kind_t lex_token(void)
+token_kind_t lex_next(void)
 {
     skip_unused_token();
     /* if reached eof, we always return eof token to avoid any advancement */
@@ -1278,7 +1264,7 @@ bool lex_accept(token_kind_t kind)
 {
     skip_unused_token();
     if (cur_token->next && cur_token->next->kind == kind) {
-        lex_token();
+        lex_next();
         return true;
     }
     return false;
@@ -1306,7 +1292,7 @@ void lex_ident(token_kind_t token, char *value)
 {
     skip_unused_token();
     if (cur_token->next && cur_token->next->kind == token) {
-        lex_token();
+        lex_next();
         if (value)
             strcpy(value, cur_token->literal);
         return;
@@ -1322,7 +1308,7 @@ void lex_expect(token_kind_t token)
 {
     skip_unused_token();
     if (cur_token->next && cur_token->next->kind == token) {
-        lex_token();
+        lex_next();
         return;
     }
     token_t *tk = cur_token->next ? cur_token->next : cur_token;

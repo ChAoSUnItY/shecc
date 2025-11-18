@@ -19,24 +19,10 @@ char *intern_string(char *str);
 /* Lexer */
 token_t *cur_token;
 
-/* Token memory management */
-token_pool_t *TOKEN_POOL;
-token_buffer_t *TOKEN_BUFFER;
-source_location_t current_location; /* Will be initialized at runtime */
-
-bool preproc_match;
-
-/* Point to the first character after where the macro has been called. It is
- * needed when returning from the macro body.
- */
-int macro_return_idx;
-
 /* Global objects */
 
 hashmap_t *SRC_FILE_MAP;
-hashmap_t *MACROS_MAP;
 hashmap_t *FUNC_MAP;
-hashmap_t *ALIASES_MAP;
 hashmap_t *CONSTANTS_MAP;
 
 /* Types */
@@ -324,21 +310,6 @@ constant_t *arena_alloc_constant(void)
     c->alias[0] = '\0';
     c->value = 0;
     return c;
-}
-
-alias_t *arena_alloc_alias(void)
-{
-    /* alias_t is simple, can avoid zeroing */
-    alias_t *a = arena_alloc(GENERAL_ARENA, sizeof(alias_t));
-    a->alias[0] = '\0';
-    a->value[0] = '\0';
-    a->disabled = false;
-    return a;
-}
-
-macro_t *arena_alloc_macro(void)
-{
-    return arena_calloc(GENERAL_ARENA, 1, sizeof(macro_t));
 }
 
 bb_traversal_args_t *arena_alloc_traversal_args(void)
@@ -645,7 +616,7 @@ void set_var_liveout(var_t *var, int end)
     var->liveness = end;
 }
 
-block_t *add_block(block_t *parent, func_t *func, macro_t *macro)
+block_t *add_block(block_t *parent, func_t *func)
 {
     block_t *blk = arena_alloc(BLOCK_ARENA, sizeof(block_t));
 
@@ -656,79 +627,8 @@ block_t *add_block(block_t *parent, func_t *func, macro_t *macro)
         arena_alloc(BLOCK_ARENA, blk->locals.capacity * sizeof(var_t *));
     blk->parent = parent;
     blk->func = func;
-    blk->macro = macro;
     blk->next = NULL;
     return blk;
-}
-
-void add_alias(char *alias, char *value)
-{
-    alias_t *al = hashmap_get(ALIASES_MAP, alias);
-    if (!al) {
-        al = arena_alloc_alias();
-        if (!al) {
-            printf("Failed to allocate alias_t\n");
-            return;
-        }
-        /* Use interned string for alias name */
-        strcpy(al->alias, intern_string(alias));
-        hashmap_put(ALIASES_MAP, alias, al);
-    }
-    strcpy(al->value, value);
-    al->disabled = false;
-}
-
-char *find_alias(char alias[])
-{
-    alias_t *al = hashmap_get(ALIASES_MAP, alias);
-    if (al && !al->disabled)
-        return al->value;
-    return NULL;
-}
-
-bool remove_alias(char *alias)
-{
-    alias_t *al = hashmap_get(ALIASES_MAP, alias);
-    if (al && !al->disabled) {
-        al->disabled = true;
-        return true;
-    }
-    return false;
-}
-
-macro_t *add_macro(char *name)
-{
-    macro_t *ma = hashmap_get(MACROS_MAP, name);
-    if (!ma) {
-        ma = arena_alloc_macro();
-        if (!ma) {
-            printf("Failed to allocate macro_t\n");
-            return NULL;
-        }
-        /* Use interned string for macro name */
-        strcpy(ma->name, intern_string(name));
-        hashmap_put(MACROS_MAP, name, ma);
-    }
-    ma->disabled = false;
-    return ma;
-}
-
-macro_t *find_macro(char *name)
-{
-    macro_t *ma = hashmap_get(MACROS_MAP, name);
-    if (ma && !ma->disabled)
-        return ma;
-    return NULL;
-}
-
-bool remove_macro(char *name)
-{
-    macro_t *ma = hashmap_get(MACROS_MAP, name);
-    if (ma) {
-        ma->disabled = true;
-        return true;
-    }
-    return false;
 }
 
 void error(char *msg);
@@ -765,22 +665,6 @@ char *intern_string(char *str)
     hashmap_put(string_pool->strings, interned, interned);
 
     return interned;
-}
-
-int find_macro_param_src_idx(char *name, block_t *parent)
-{
-    macro_t *macro = parent->macro;
-
-    if (!parent)
-        error("The macro expansion is not supported in the global scope");
-    if (!parent->macro)
-        return 0;
-
-    for (int i = 0; i < macro->num_param_defs; i++) {
-        if (!strcmp(macro->param_defs[i].var_name, name))
-            return macro->params[i];
-    }
-    return 0;
 }
 
 type_t *add_type(void)
@@ -1206,21 +1090,11 @@ void global_init(void)
         arena_alloc(GENERAL_ARENA, sizeof(string_literal_pool_t));
     string_literal_pool->literals = hashmap_create(256);
 
-    SOURCE = strbuf_create(MAX_SOURCE);
     SRC_FILE_MAP = hashmap_create(8);
-    MACROS_MAP = hashmap_create(MAX_ALIASES);
     FUNC_MAP = hashmap_create(DEFAULT_FUNCS_SIZE);
-    INCLUSION_MAP = hashmap_create(DEFAULT_INCLUSIONS_SIZE);
-    ALIASES_MAP = hashmap_create(MAX_ALIASES);
     CONSTANTS_MAP = hashmap_create(MAX_CONSTANTS);
 
     /* Initialize token management globals */
-    current_location.line = 1;
-    current_location.column = 1;
-    current_location.filename = NULL;
-    TOKEN_POOL = NULL;
-    TOKEN_BUFFER = NULL;
-
     elf_code = strbuf_create(MAX_CODE);
     elf_data = strbuf_create(MAX_DATA);
     elf_rodata = strbuf_create(MAX_DATA);
@@ -1354,10 +1228,7 @@ void global_release(void)
     strbuf_free(elf_section);
 
     hashmap_free(SRC_FILE_MAP);
-    hashmap_free(MACROS_MAP);
     hashmap_free(FUNC_MAP);
-    hashmap_free(INCLUSION_MAP);
-    hashmap_free(ALIASES_MAP);
     hashmap_free(CONSTANTS_MAP);
 }
 
@@ -1685,39 +1556,10 @@ void error_at(char *msg, source_location_t *loc)
 }
 
 /* Reports an error and specifying a position */
+/* FIXME: This function has been deprecated, use `error_at` instead. */
 void error(char *msg)
 {
-    /* Construct error source diagnostics, enabling precise identification of
-     * syntax and logic issues within the code.
-     */
-    int offset, start_idx, i = 0;
-    char diagnostic[512 /* MAX_LINE_LEN * 2 */];
-
-    for (offset = SOURCE->size; offset >= 0 && SOURCE->elements[offset] != '\n';
-         offset--)
-        ;
-
-    start_idx = offset + 1;
-
-    for (offset = 0;
-         offset < MAX_SOURCE && (start_idx + offset) < SOURCE->size &&
-         SOURCE->elements[start_idx + offset] != '\n';
-         offset++) {
-        diagnostic[i++] = SOURCE->elements[start_idx + offset];
-    }
-    diagnostic[i++] = '\n';
-
-    for (offset = start_idx; offset < SOURCE->size; offset++) {
-        diagnostic[i++] = ' ';
-    }
-
-    strcpy(diagnostic + i, "^ Error occurs here");
-
-    /* TODO: Implement line/column tracking for precise error location
-     * reporting. Current implementation only shows source position offset.
-     */
-    printf("[Error]: %s\nOccurs at source location %d.\n%s\n", msg,
-           SOURCE->size, diagnostic);
+    printf("[Error]: %s\nOccurs at source location %d.\n", msg, SOURCE->size);
     abort();
 }
 

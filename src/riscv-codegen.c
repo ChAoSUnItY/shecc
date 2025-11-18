@@ -6,7 +6,6 @@
  */
 
 /* Translate IR to target machine code */
-
 #include "defs.h"
 #include "globals.c"
 #include "riscv.c"

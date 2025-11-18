@@ -1089,7 +1089,7 @@ void read_parameter_list_decl(func_t *func, bool anon)
 
     char token[MAX_TYPE_LEN];
     if (lex_peek(T_identifier, token) && !strncmp(token, "void", 4)) {
-        lex_token();
+        lex_next();
         if (lex_accept(T_close_bracket))
             return;
         func->param_defs[vn].type = TY_void;
@@ -3360,7 +3360,7 @@ void eval_ternary_imm(int cond, char *token)
 {
     if (cond == 0) {
         while (!lex_peek(T_colon, NULL)) {
-            lex_token();
+            lex_next();
         }
         lex_accept(T_colon);
         read_global_assignment(token);
@@ -3368,7 +3368,7 @@ void eval_ternary_imm(int cond, char *token)
         read_global_assignment(token);
         lex_expect(T_colon);
         while (!lex_peek(T_semicolon, NULL)) {
-            lex_token();
+            lex_next();
         }
     }
 }
@@ -3541,7 +3541,6 @@ void perform_side_effect(block_t *parent, basic_block_t *bb)
 }
 
 basic_block_t *read_code_block(func_t *func,
-                               macro_t *macro,
                                block_t *parent,
                                basic_block_t *bb);
 
@@ -3563,7 +3562,7 @@ basic_block_t *read_body_statement(block_t *parent, basic_block_t *bb)
      */
 
     if (lex_peek(T_open_curly, NULL))
-        return read_code_block(parent->func, parent->macro, parent, bb);
+        return read_code_block(parent->func, parent, bb);
 
     if (lex_accept(T_return)) {
         return handle_return_statement(parent, bb);
@@ -3712,7 +3711,7 @@ basic_block_t *read_body_statement(block_t *parent, basic_block_t *bb)
         lex_expect(T_open_bracket);
 
         /* synthesize for loop block */
-        block_t *blk = add_block(parent, parent->func, parent->macro);
+        block_t *blk = add_block(parent, parent->func);
 
         /* setup - execute once */
         basic_block_t *setup = bb_create(blk);
@@ -4400,12 +4399,9 @@ basic_block_t *read_body_statement(block_t *parent, basic_block_t *bb)
     return NULL;
 }
 
-basic_block_t *read_code_block(func_t *func,
-                               macro_t *macro,
-                               block_t *parent,
-                               basic_block_t *bb)
+basic_block_t *read_code_block(func_t *func, block_t *parent, basic_block_t *bb)
 {
-    block_t *blk = add_block(parent, func, macro);
+    block_t *blk = add_block(parent, func);
     bb->scope = blk;
 
     lex_expect(T_open_curly);
@@ -4422,7 +4418,7 @@ void var_add_killed_bb(var_t *var, basic_block_t *bb);
 
 void read_func_body(func_t *func)
 {
-    block_t *blk = add_block(NULL, func, NULL);
+    block_t *blk = add_block(NULL, func);
     func->bbs = bb_create(blk);
     func->exit = bb_create(blk);
 
@@ -4432,7 +4428,7 @@ void read_func_body(func_t *func)
         func->param_defs[i].base = &func->param_defs[i];
         var_add_killed_bb(&func->param_defs[i], func->bbs);
     }
-    basic_block_t *body = read_code_block(func, NULL, NULL, func->bbs);
+    basic_block_t *body = read_code_block(func, NULL, func->bbs);
     if (body)
         bb_connect(body, func->exit, NEXT);
 
@@ -5023,8 +5019,8 @@ void parse_internal(void)
     TY_bool->base_type = TYPE_char;
     TY_bool->size = 1;
 
-    GLOBAL_BLOCK = add_block(NULL, NULL, NULL); /* global block */
-    elf_add_symbol("", 0);                      /* undef symbol */
+    GLOBAL_BLOCK = add_block(NULL, NULL); /* global block */
+    elf_add_symbol("", 0);                /* undef symbol */
 
     /* Linux syscall */
     func_t *func = add_func("__syscall", true);
