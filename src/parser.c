@@ -1124,26 +1124,24 @@ void read_parameter_list_decl(func_t *func, bool anon)
 
 void read_literal_param(block_t *parent, basic_block_t *bb)
 {
-    char literal[MAX_TOKEN_LEN];
-    char unescaped[MAX_TOKEN_LEN];
-    char combined[MAX_TOKEN_LEN];
+    char literal[MAX_TOKEN_LEN], unescaped[MAX_TOKEN_LEN],
+        combined[MAX_LINE_LEN];
     int combined_len = 0;
 
     /* Read first string literal */
     lex_ident(T_string, literal);
-    unescape_string(literal, unescaped, MAX_TOKEN_LEN);
-    strcpy(combined, unescaped);
-    combined_len = strlen(unescaped);
+    unescape_string(literal, combined, MAX_LINE_LEN);
+    combined_len = strlen(combined);
 
     /* Check for adjacent string literals and concatenate them */
     while (lex_peek(T_string, NULL)) {
         lex_ident(T_string, literal);
-        unescape_string(literal, unescaped, MAX_TOKEN_LEN);
+        unescape_string(literal, unescaped, MAX_LINE_LEN - combined_len);
         int unescaped_len = strlen(unescaped);
-        if (combined_len + unescaped_len >= MAX_TOKEN_LEN - 1)
+        if (combined_len + unescaped_len >= MAX_LINE_LEN - 1)
             error("Concatenated string literal too long");
 
-        strcpy(combined + combined_len, literal);
+        strcpy(combined + combined_len, unescaped);
         combined_len += unescaped_len;
     }
 

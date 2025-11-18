@@ -703,7 +703,7 @@ int unescape_string(const char *input, char *output, int output_size)
                 i++;
                 break;
             case 'e':
-                output[j++] = 23;
+                output[j++] = 27;
                 i++;
                 break;
             case 'n':
@@ -746,10 +746,12 @@ int unescape_string(const char *input, char *output, int output_size)
                     return -1;
 
                 int value = 0;
+                int count = 0;
 
-                while (is_hex(input[i])) {
-                    value = value * 16 + hex_digit_value(input[i]);
+                while (is_hex(input[i]) && count < 2) {
+                    value = (value << 4) + hex_digit_value(input[i]);
                     i++;
+                    count++;
                 }
 
                 output[j++] = (char) value;
@@ -1363,6 +1365,7 @@ void global_release(void)
     hashmap_free(CONSTANTS_MAP);
 }
 
+#if DEBUG_BUILD
 void dbg_token(token_t *token)
 {
     char *name;
@@ -1637,6 +1640,7 @@ void dbg_token(token_t *token)
                token->location.column);
     }
 }
+#endif
 
 /* Reports an error without specifying a position */
 void fatal(char *msg)
