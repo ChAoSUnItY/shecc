@@ -27,10 +27,6 @@ hashmap_t *KEYWORD_MAP = NULL;
 token_kind_t *directive_tokens_storage = NULL;
 token_kind_t *keyword_tokens_storage = NULL;
 
-/* TOKEN_CACHE maps filename to the corresponding computed token stream */
-hashmap_t *TOKEN_CACHE = NULL;
-strbuf_t *LIBC_SRC;
-
 void lex_init_directives()
 {
     if (DIRECTIVE_MAP)
@@ -934,9 +930,6 @@ token_stream_t *lex_token_by_file(char *filename)
     source_location_t loc = {0, 1, 1, 1, filename};
     strbuf_t *buf;
 
-    if (!TOKEN_CACHE)
-        TOKEN_CACHE = hashmap_create(8);
-
     tks = hashmap_get(TOKEN_CACHE, filename);
 
     /* Already cached, just return the computed token stream */
@@ -999,9 +992,6 @@ token_stream_t *include_libc()
 
     if (tks)
         return tks;
-
-    if (!TOKEN_CACHE)
-        TOKEN_CACHE = hashmap_create(8);
 
     if (!hashmap_contains(SRC_FILE_MAP, filename))
         hashmap_put(SRC_FILE_MAP, filename, LIBC_SRC);

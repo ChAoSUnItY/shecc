@@ -18,6 +18,9 @@ char *intern_string(char *str);
 
 /* Lexer */
 token_t *cur_token;
+/* TOKEN_CACHE maps filename to the corresponding computed token stream */
+hashmap_t *TOKEN_CACHE;
+strbuf_t *LIBC_SRC;
 
 /* Global objects */
 
@@ -70,8 +73,6 @@ basic_block_t *MAIN_BB;
 int elf_offset = 0;
 
 regfile_t REGS[REG_CNT];
-
-strbuf_t *SOURCE;
 
 hashmap_t *INCLUSION_MAP;
 
@@ -1223,7 +1224,8 @@ void global_init(void)
         arena_alloc(GENERAL_ARENA, sizeof(string_literal_pool_t));
     string_literal_pool->literals = hashmap_create(256);
 
-    SRC_FILE_MAP = hashmap_create(8);
+    TOKEN_CACHE = hashmap_create(DEFAULT_SRC_FILE_COUNT);
+    SRC_FILE_MAP = hashmap_create(DEFAULT_SRC_FILE_COUNT);
     FUNC_MAP = hashmap_create(DEFAULT_FUNCS_SIZE);
     CONSTANTS_MAP = hashmap_create(MAX_CONSTANTS);
 
@@ -1351,7 +1353,7 @@ void global_release(void)
     arena_free(TOKEN_ARENA);
     arena_free(GENERAL_ARENA); /* free TYPES and PH2_IR_FLATTEN */
 
-    strbuf_free(SOURCE);
+    strbuf_free(LIBC_SRC);
     strbuf_free(elf_code);
     strbuf_free(elf_data);
     strbuf_free(elf_rodata);
@@ -1360,6 +1362,7 @@ void global_release(void)
     strbuf_free(elf_strtab);
     strbuf_free(elf_section);
 
+    hashmap_free(TOKEN_CACHE);
     hashmap_free(SRC_FILE_MAP);
     hashmap_free(FUNC_MAP);
     hashmap_free(CONSTANTS_MAP);
@@ -1694,7 +1697,7 @@ void error_at(char *msg, source_location_t *loc)
 /* FIXME: This function has been deprecated, use `error_at` instead. */
 void error(char *msg)
 {
-    printf("[Error]: %s\nOccurs at source location %d.\n", msg, SOURCE->size);
+    printf("[Error]: %s.\n");
     abort();
 }
 

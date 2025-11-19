@@ -56,6 +56,7 @@
 #define SMALL_ARENA_SIZE 65536    /* 64 KiB - for small allocations */
 #define LARGE_ARENA_SIZE 524288   /* 512 KiB - for instruction arena */
 #define DEFAULT_FUNCS_SIZE 64
+#define DEFAULT_SRC_FILE_COUNT 8
 
 /* Arena compaction bitmask flags for selective memory reclamation */
 #define COMPACT_ARENA_BLOCK 0x01   /* BLOCK_ARENA - variables/blocks */
