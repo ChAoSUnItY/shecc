@@ -83,11 +83,10 @@ jobs:
       - name: Build stage 1 artifact
         run: |
           ./out/shecc --no-libc -o out/shecc-stage1.elf ./out/out.c
+          chmod a+x ./out/shecc-stage1.elf
       - name: Preprocess stage 2 source code
         run: |
-          make out/shecc
           ./out/shecc-stage1.elf -E src/main.c > ./out/out.c
-          chmod a+x ./out/shecc-stage1.elf
       - name: Build stage 2 artifact
         run: |
           ./out/shecc-stage1.elf --no-libc -o out/shecc-stage2.elf ./out/out.c
