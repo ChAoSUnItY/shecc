@@ -72,11 +72,11 @@ jobs:
           sudo apt-get install -q -y qemu-user
           sudo apt-get install -q -y build-essential
       - name: Configurate config
-        env:
-          CC: ${{ matrix.compiler }}
         run: |
           make distclean config ARCH=${{ matrix.architecture }}
       - name: Preprocess stage 1 source code
+        env:
+          CC: ${{ matrix.compiler }}
         run: |
           make out/shecc
           ./out/shecc -E src/main.c > ./out/out.c

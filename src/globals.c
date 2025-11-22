@@ -1697,7 +1697,7 @@ void error_at(char *msg, source_location_t *loc)
 /* FIXME: This function has been deprecated, use `error_at` instead. */
 void error(char *msg)
 {
-    printf("[Error]: %s.\n");
+    printf("[Error]: %s.\n", msg);
     abort();
 }
 

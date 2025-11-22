@@ -12,7 +12,7 @@ source_location_t synth_built_in_loc;
 hashmap_t *PRAGMA_ONCE;
 hashmap_t *MACROS;
 
-token_t *lex_skip_space(token_t *tk)
+token_t *pp_lex_skip_space(token_t *tk)
 {
     while (tk->next &&
            (tk->next->kind == T_whitespace || tk->next->kind == T_tab))
@@ -20,27 +20,27 @@ token_t *lex_skip_space(token_t *tk)
     return tk;
 }
 
-token_t *lex_next_token(token_t *tk, bool skip_space)
+token_t *pp_lex_next_token(token_t *tk, bool skip_space)
 {
     if (skip_space)
-        tk = lex_skip_space(tk);
+        tk = pp_lex_skip_space(tk);
     return tk->next;
 }
 
-bool lex_peek_token(token_t *tk, token_kind_t kind, bool skip_space)
+bool pp_lex_peek_token(token_t *tk, token_kind_t kind, bool skip_space)
 {
     if (skip_space)
-        tk = lex_skip_space(tk);
+        tk = pp_lex_skip_space(tk);
     return tk->next && tk->next->kind == kind;
 }
 
-token_t *lex_expect_token(token_t *tk, token_kind_t kind, bool skip_space)
+token_t *pp_lex_expect_token(token_t *tk, token_kind_t kind, bool skip_space)
 {
     if (skip_space)
-        tk = lex_skip_space(tk);
+        tk = pp_lex_skip_space(tk);
     if (tk->next) {
         if (tk->next->kind == kind) {
-            return lex_next_token(tk, false);
+            return pp_lex_next_token(tk, false);
         }
 
         error_at("Unexpected token kind", &tk->next->location);
@@ -55,7 +55,7 @@ token_t *lex_ident_token(token_t *tk,
                          char *dest,
                          bool skip_space)
 {
-    tk = lex_expect_token(tk, kind, skip_space);
+    tk = pp_lex_expect_token(tk, kind, skip_space);
     strcpy(dest, tk->literal);
     return tk;
 }
@@ -69,7 +69,7 @@ token_t *copy_token(token_t *tk)
     return new_tk;
 }
 
-typedef struct macro_n {
+typedef struct macro {
     char *name;
     int param_num;
     token_t *param_names[MAX_PARAMS];
@@ -79,7 +79,14 @@ typedef struct macro_n {
     bool is_disabled;
     /* build-in function-like macro handler */
     token_t *(*handler)(token_t *);
-} macro_nt;
+} macro_t;
+
+bool is_macro_defined(char *name)
+{
+    macro_t *macro = hashmap_get(MACROS, name);
+
+    return macro && !macro->is_disabled;
+}
 
 token_t *file_macro_handler(token_t *tk)
 {
@@ -97,7 +104,7 @@ token_t *line_macro_handler(token_t *tk)
 
     token_t *new_tk = copy_token(tk);
     new_tk->kind = T_numeric;
-    new_tk->literal = arena_strdup(TOKEN_ARENA, line);
+    new_tk->literal = intern_string(line);
     memcpy(&new_tk->location, &tk->location, sizeof(source_location_t));
     return new_tk;
 }
@@ -230,7 +237,7 @@ int pp_get_unary_operator_prio(opcode_t op)
 
 token_t *pp_get_operator(token_t *tk, opcode_t *op)
 {
-    tk = lex_skip_space(tk);
+    tk = pp_lex_skip_space(tk);
 
     switch (tk->next->kind) {
     case T_plus:
@@ -295,7 +302,7 @@ token_t *pp_get_operator(token_t *tk, opcode_t *op)
         op[0] = OP_generic;
         return tk;
     }
-    tk = lex_next_token(tk, true);
+    tk = pp_lex_next_token(tk, true);
     return tk;
 }
 
@@ -339,32 +346,31 @@ int pp_read_numeric_constant(char buffer[])
 
 token_t *pp_read_constant_expr_operand(token_t *tk, int *val)
 {
-    if (lex_peek_token(tk, T_numeric, true)) {
-        tk = lex_next_token(tk, true);
+    if (pp_lex_peek_token(tk, T_numeric, true)) {
+        tk = pp_lex_next_token(tk, true);
         val[0] = pp_read_numeric_constant(tk->literal);
         return tk;
     }
 
-    if (lex_peek_token(tk, T_open_bracket, true)) {
-        tk = lex_next_token(tk, true);
+    if (pp_lex_peek_token(tk, T_open_bracket, true)) {
+        tk = pp_lex_next_token(tk, true);
         tk = pp_read_constant_expr_operand(tk, val);
-        tk = lex_expect_token(tk, T_close_bracket, true);
+        tk = pp_lex_expect_token(tk, T_close_bracket, true);
         return tk;
     }
 
-    if (lex_peek_token(tk, T_identifier, true)) {
-        tk = lex_next_token(tk, true);
+    if (pp_lex_peek_token(tk, T_identifier, true)) {
+        tk = pp_lex_next_token(tk, true);
 
         if (!strcmp("defined", tk->literal)) {
-            macro_nt *macro;
-            tk = lex_expect_token(tk, T_open_bracket, true);
-            tk = lex_expect_token(tk, T_identifier, true);
-            macro = hashmap_get(MACROS, tk->literal);
-            val[0] = macro && !macro->is_disabled;
-            tk = lex_expect_token(tk, T_close_bracket, true);
+            macro_t *macro;
+            tk = pp_lex_expect_token(tk, T_open_bracket, true);
+            tk = pp_lex_expect_token(tk, T_identifier, true);
+            val[0] = is_macro_defined(tk->literal);
+            tk = pp_lex_expect_token(tk, T_close_bracket, true);
         } else {
             /* Any identifier will fallback and evaluate as 0 */
-            macro_nt *macro = hashmap_get(MACROS, tk->literal);
+            macro_t *macro = hashmap_get(MACROS, tk->literal);
 
             /* Disallow function-like macro to be expanded */
             if (macro && !(macro->param_num > 0 || macro->is_variadic)) {
@@ -390,7 +396,7 @@ token_t *pp_read_constant_expr_operand(token_t *tk, int *val)
     /* Unable to identify next token, so we advance to next non-whitespace token
      * and report its location with error message.
      */
-    tk = lex_next_token(tk, true);
+    tk = pp_lex_next_token(tk, true);
     error_at("Unexpected token while evaluating constant", &tk->location);
     return tk;
 }
@@ -503,7 +509,7 @@ token_t *pp_read_constant_expr(token_t *tk, int *val)
 {
     tk = pp_read_constant_infix_expr(0, tk, val);
     /* advance to fully consume constant expression */
-    tk = lex_next_token(tk, true);
+    tk = pp_lex_next_token(tk, true);
     return tk;
 }
 
@@ -556,7 +562,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
     cond_incl_t *ci = NULL;
 
     while (tk) {
-        macro_nt *macro = NULL;
+        macro_t *macro = NULL;
 
         switch (tk->kind) {
         case T_identifier: {
@@ -583,7 +589,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                     preprocess_internal(macro_arg_replcaement, &expansion_ctx);
                 cur->next = macro_arg_replcaement;
                 cur = expansion_ctx.end_of_token;
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_next_token(tk, false);
                 continue;
             }
 
@@ -601,11 +607,11 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (macro->handler) {
                 cur->next = macro->handler(expansion_ctx.expanded_from);
                 cur = cur->next;
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_next_token(tk, false);
                 continue;
             }
 
-            if (lex_peek_token(tk, T_open_bracket, true)) {
+            if (pp_lex_peek_token(tk, T_open_bracket, true)) {
                 token_t arg_head;
                 token_t *arg_cur = &arg_head;
                 int arg_idx = 0;
@@ -615,17 +621,17 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                     hide_set_union(ctx->hide_set, new_hide_set(tk->literal));
                 expansion_ctx.macro_args = hashmap_create(8);
 
-                tk = lex_next_token(tk, true);
+                tk = pp_lex_next_token(tk, true);
                 while (true) {
-                    if (lex_peek_token(tk, T_open_bracket, false)) {
+                    if (pp_lex_peek_token(tk, T_open_bracket, false)) {
                         bracket_depth++;
-                    } else if (lex_peek_token(tk, T_close_bracket, false)) {
+                    } else if (pp_lex_peek_token(tk, T_close_bracket, false)) {
                         bracket_depth--;
                     }
 
                     /* Expand arg if needed */
                     if (expansion_ctx.macro_args &&
-                        lex_peek_token(tk, T_identifier, false)) {
+                        pp_lex_peek_token(tk, T_identifier, false)) {
                         token_t *arg_tk =
                             hashmap_get(ctx->macro_args, tk->next->literal);
                         preprocess_ctx_t arg_expansion_ctx;
@@ -636,7 +642,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                         if (arg_tk) {
                             arg_tk =
                                 preprocess_internal(arg_tk, &arg_expansion_ctx);
-                            tk = lex_next_token(tk, false);
+                            tk = pp_lex_next_token(tk, false);
                             arg_cur->next = arg_tk;
                             arg_cur = arg_expansion_ctx.end_of_token;
                             continue;
@@ -644,9 +650,9 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                     }
 
                     if (bracket_depth >= 0 &&
-                        !lex_peek_token(tk, T_comma, false) &&
-                        !lex_peek_token(tk, T_close_bracket, false)) {
-                        tk = lex_next_token(tk, false);
+                        !pp_lex_peek_token(tk, T_comma, false) &&
+                        !pp_lex_peek_token(tk, T_close_bracket, false)) {
+                        tk = pp_lex_next_token(tk, false);
                         arg_cur->next = copy_token(tk);
                         arg_cur = arg_cur->next;
                         continue;
@@ -691,13 +697,13 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                     }
                     arg_cur = &arg_head;
 
-                    if (lex_peek_token(tk, T_comma, false)) {
-                        tk = lex_next_token(tk, false);
+                    if (pp_lex_peek_token(tk, T_comma, false)) {
+                        tk = pp_lex_next_token(tk, false);
                         continue;
                     }
 
-                    if (lex_peek_token(tk, T_close_bracket, false)) {
-                        tk = lex_next_token(tk, false);
+                    if (pp_lex_peek_token(tk, T_close_bracket, false)) {
+                        tk = pp_lex_next_token(tk, false);
                         break;
                     }
                 }
@@ -719,7 +725,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                 cur = expansion_ctx.end_of_token;
             }
 
-            tk = lex_next_token(tk, false);
+            tk = pp_lex_next_token(tk, false);
             continue;
         }
         case T_cppd_include: {
@@ -731,8 +737,8 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             inclusion_ctx.macro_args = NULL;
             inclusion_ctx.trim_eof = true;
 
-            if (lex_peek_token(tk, T_string, true)) {
-                tk = lex_next_token(tk, true);
+            if (pp_lex_peek_token(tk, T_string, true)) {
+                tk = pp_lex_next_token(tk, true);
                 strcpy(inclusion_path, tk->literal);
 
                 /* normalize path */
@@ -761,33 +767,33 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             } else {
                 int sz = 0;
                 char token_buffer[MAX_TOKEN_LEN], *literal;
-                tk = lex_expect_token(tk, T_lt, true);
+                tk = pp_lex_expect_token(tk, T_lt, true);
 
-                while (!lex_peek_token(tk, T_gt, false)) {
-                    tk = lex_next_token(tk, false);
+                while (!pp_lex_peek_token(tk, T_gt, false)) {
+                    tk = pp_lex_next_token(tk, false);
                     literal = token_to_string(tk, token_buffer);
 
                     strcpy(inclusion_path + sz, literal);
                     sz += strlen(literal);
                 }
 
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_next_token(tk, false);
                 /* FIXME: We ignore #include <...> at this moment, since
                  * all libc functions are included done by inlining.
                  */
-                tk = lex_expect_token(tk, T_newline, true);
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_expect_token(tk, T_newline, true);
+                tk = pp_lex_next_token(tk, false);
                 continue;
             }
 
-            tk = lex_expect_token(tk, T_newline, true);
-            tk = lex_next_token(tk, false);
+            tk = pp_lex_expect_token(tk, T_newline, true);
+            tk = pp_lex_next_token(tk, false);
 
             if (hashmap_contains(PRAGMA_ONCE, inclusion_path))
                 continue;
 
             file_tks =
-                lex_token_by_file(arena_strdup(TOKEN_ARENA, inclusion_path));
+                lex_token_by_file(intern_string(inclusion_path));
             cur->next = preprocess_internal(file_tks->head, &inclusion_ctx);
             cur = inclusion_ctx.end_of_token;
             continue;
@@ -795,57 +801,57 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         case T_cppd_define: {
             token_t *r_head = NULL, *r_tail = NULL, *r_cur;
 
-            macro = calloc(1, sizeof(macro_nt));
-            tk = lex_expect_token(tk, T_identifier, true);
+            macro = calloc(1, sizeof(macro_t));
+            tk = pp_lex_expect_token(tk, T_identifier, true);
             macro = hashmap_get(MACROS, tk->literal);
 
             if (!macro) {
-                macro = arena_calloc(TOKEN_ARENA, 1, sizeof(macro_nt));
+                macro = arena_calloc(TOKEN_ARENA, 1, sizeof(macro_t));
                 macro->name = tk->literal;
             } else {
                 /* Ensures that #undef effect is overwritten */
                 macro->is_disabled = false;
             }
 
-            if (lex_peek_token(tk, T_open_bracket, false)) {
+            if (pp_lex_peek_token(tk, T_open_bracket, false)) {
                 /* function-like macro */
-                tk = lex_next_token(tk, false);
-                while (lex_peek_token(tk, T_identifier, true)) {
-                    tk = lex_next_token(tk, true);
+                tk = pp_lex_next_token(tk, false);
+                while (pp_lex_peek_token(tk, T_identifier, true)) {
+                    tk = pp_lex_next_token(tk, true);
                     macro->param_names[macro->param_num++] = copy_token(tk);
 
-                    if (lex_peek_token(tk, T_comma, true)) {
-                        tk = lex_next_token(tk, true);
+                    if (pp_lex_peek_token(tk, T_comma, true)) {
+                        tk = pp_lex_next_token(tk, true);
                     }
                 }
 
-                if (lex_peek_token(tk, T_elipsis, true)) {
-                    tk = lex_next_token(tk, true);
+                if (pp_lex_peek_token(tk, T_elipsis, true)) {
+                    tk = pp_lex_next_token(tk, true);
                     macro->is_variadic = true;
                     macro->variadic_tk = copy_token(tk);
                     macro->variadic_tk->literal =
-                        arena_strdup(TOKEN_ARENA, "__VA_ARGS__");
+                        intern_string("__VA_ARGS__");
                 }
 
-                tk = lex_expect_token(tk, T_close_bracket, true);
+                tk = pp_lex_expect_token(tk, T_close_bracket, true);
             }
 
-            tk = lex_skip_space(tk);
-            while (!lex_peek_token(tk, T_newline, false)) {
-                if (lex_peek_token(tk, T_backslash, false)) {
-                    tk = lex_expect_token(tk, T_backslash, false);
+            tk = pp_lex_skip_space(tk);
+            while (!pp_lex_peek_token(tk, T_newline, false)) {
+                if (pp_lex_peek_token(tk, T_backslash, false)) {
+                    tk = pp_lex_expect_token(tk, T_backslash, false);
 
-                    if (!lex_peek_token(tk, T_newline, false))
+                    if (!pp_lex_peek_token(tk, T_newline, false))
                         error_at("Backslash and newline must not be separated",
                                  &tk->location);
                     else
-                        tk = lex_expect_token(tk, T_newline, false);
+                        tk = pp_lex_expect_token(tk, T_newline, false);
 
-                    tk = lex_next_token(tk, false);
+                    tk = pp_lex_next_token(tk, false);
                     continue;
                 }
 
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_next_token(tk, false);
                 r_cur = copy_token(tk);
                 r_cur->next = NULL;
 
@@ -858,21 +864,21 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                 }
             }
 
-            tk = lex_expect_token(tk, T_newline, false);
-            tk = lex_next_token(tk, false);
+            tk = pp_lex_expect_token(tk, T_newline, false);
+            tk = pp_lex_next_token(tk, false);
             macro->replacement = r_head;
             hashmap_put(MACROS, macro->name, macro);
             continue;
         }
         case T_cppd_undef: {
-            tk = lex_expect_token(tk, T_identifier, true);
+            tk = pp_lex_expect_token(tk, T_identifier, true);
             macro = hashmap_get(MACROS, tk->literal);
 
             if (macro) {
                 macro->is_disabled = true;
             }
 
-            tk = lex_expect_token(tk, T_newline, true);
+            tk = pp_lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_if: {
@@ -887,26 +893,26 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         }
         case T_cppd_ifdef: {
             token_t *kw_tk = tk;
-            tk = lex_expect_token(tk, T_identifier, true);
-            bool defined = hashmap_contains(MACROS, tk->literal);
+            tk = pp_lex_expect_token(tk, T_identifier, true);
+            bool defined = is_macro_defined(tk->literal);
 
             ci = push_cond(ci, kw_tk, defined);
             if (!defined)
                 tk = skip_cond_incl(tk);
             else
-                tk = lex_expect_token(tk, T_newline, true);
+                tk = pp_lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_ifndef: {
             token_t *kw_tk = tk;
-            tk = lex_expect_token(tk, T_identifier, true);
-            bool defined = hashmap_contains(MACROS, tk->literal);
+            tk = pp_lex_expect_token(tk, T_identifier, true);
+            bool defined = is_macro_defined(tk->literal);
 
             ci = push_cond(ci, kw_tk, !defined);
             if (defined)
                 tk = skip_cond_incl(tk);
             else
-                tk = lex_expect_token(tk, T_newline, true);
+                tk = pp_lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_elif: {
@@ -926,7 +932,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (!ci || ci->ctx == CK_else_then)
                 error_at("Stray #else", &tk->location);
             ci->ctx = CK_else_then;
-            tk = lex_expect_token(tk, T_newline, true);
+            tk = pp_lex_expect_token(tk, T_newline, true);
 
             if (ci->included)
                 tk = skip_cond_incl(tk);
@@ -936,26 +942,26 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (!ci)
                 error_at("Stray #endif", &tk->location);
             ci = ci->prev;
-            tk = lex_expect_token(tk, T_newline, true);
+            tk = pp_lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_pragma: {
-            if (lex_peek_token(tk, T_identifier, true)) {
-                tk = lex_next_token(tk, true);
+            if (pp_lex_peek_token(tk, T_identifier, true)) {
+                tk = pp_lex_next_token(tk, true);
 
                 if (!strcmp("once", tk->literal))
                     hashmap_put(PRAGMA_ONCE, tk->location.filename, NULL);
             }
 
-            while (!lex_peek_token(tk, T_newline, true))
-                tk = lex_next_token(tk, true);
+            while (!pp_lex_peek_token(tk, T_newline, true))
+                tk = pp_lex_next_token(tk, true);
 
-            tk = lex_expect_token(tk, T_newline, true);
+            tk = pp_lex_expect_token(tk, T_newline, true);
             continue;
         }
         case T_cppd_error: {
-            if (lex_peek_token(tk, T_string, true)) {
-                tk = lex_next_token(tk, true);
+            if (pp_lex_peek_token(tk, T_string, true)) {
+                tk = pp_lex_next_token(tk, true);
 
                 error_at(tk->literal, &tk->location);
             } else {
@@ -976,7 +982,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
         }
         case T_eof: {
             if (ctx->trim_eof) {
-                tk = lex_next_token(tk, false);
+                tk = pp_lex_next_token(tk, false);
                 continue;
             }
             break;
@@ -987,7 +993,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
 
         cur->next = copy_token(tk);
         cur = cur->next;
-        tk = lex_next_token(tk, false);
+        tk = pp_lex_next_token(tk, false);
     }
 
     if (ci)
@@ -1015,25 +1021,25 @@ token_t *preprocess(token_t *tk)
     synth_built_in_loc.line = 1;
     synth_built_in_loc.filename = "<built-in>";
 
-    macro_nt *macro = calloc(1, sizeof(macro_nt));
+    macro_t *macro = calloc(1, sizeof(macro_t));
     macro->name = "__FILE__";
     macro->handler = file_macro_handler;
     hashmap_put(MACROS, "__FILE__", macro);
 
-    macro = calloc(1, sizeof(macro_nt));
+    macro = calloc(1, sizeof(macro_t));
     macro->name = "__LINE__";
     macro->handler = line_macro_handler;
     hashmap_put(MACROS, "__LINE__", macro);
 
     /* architecture defines */
-    macro = calloc(1, sizeof(macro_nt));
+    macro = calloc(1, sizeof(macro_t));
     macro->name = ARCH_PREDEFINED;
     macro->replacement = new_token(T_numeric, &synth_built_in_loc, 1);
     macro->replacement->literal = "1";
     hashmap_put(MACROS, ARCH_PREDEFINED, macro);
 
     /* shecc run-time defines */
-    macro = calloc(1, sizeof(macro_nt));
+    macro = calloc(1, sizeof(macro_t));
     macro->name = "__SHECC__";
     macro->replacement = new_token(T_numeric, &synth_built_in_loc, 1);
     macro->replacement->literal = "1";

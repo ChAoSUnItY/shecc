@@ -420,7 +420,7 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
 
         token_buffer[sz] = '\0';
         token = new_token(T_numeric, loc, sz);
-        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
+        token->literal = intern_string(token_buffer);
         loc->column += sz;
         return token;
     }
@@ -523,7 +523,7 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
 
         read_char(buf);
         token = new_token(T_string, loc, sz + 2);
-        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
+        token->literal = intern_string(token_buffer);
         loc->column += sz + 2;
         return token;
     }
@@ -557,8 +557,8 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
 
         read_char(buf);
         token = new_token(T_char, loc, sz + 2);
-        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
-        loc->column = sz + 2;
+        token->literal = intern_string(token_buffer);
+        loc->column += sz + 2;
         return token;
     }
 
@@ -906,7 +906,7 @@ token_t *lex_token(strbuf_t *buf, source_location_t *loc, token_t *prev)
             kind = lookup_keyword(token_buffer);
 
         token = new_token(kind, loc, sz);
-        token->literal = arena_strdup(TOKEN_ARENA, token_buffer);
+        token->literal = intern_string(token_buffer);
         loc->column += sz;
         return token;
     }
