@@ -363,7 +363,6 @@ token_t *pp_read_constant_expr_operand(token_t *tk, int *val)
         tk = pp_lex_next_token(tk, true);
 
         if (!strcmp("defined", tk->literal)) {
-            macro_t *macro;
             tk = pp_lex_expect_token(tk, T_open_bracket, true);
             tk = pp_lex_expect_token(tk, T_identifier, true);
             val[0] = is_macro_defined(tk->literal);
@@ -792,8 +791,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
             if (hashmap_contains(PRAGMA_ONCE, inclusion_path))
                 continue;
 
-            file_tks =
-                lex_token_by_file(intern_string(inclusion_path));
+            file_tks = lex_token_by_file(intern_string(inclusion_path));
             cur->next = preprocess_internal(file_tks->head, &inclusion_ctx);
             cur = inclusion_ctx.end_of_token;
             continue;
@@ -829,8 +827,7 @@ token_t *preprocess_internal(token_t *tk, preprocess_ctx_t *ctx)
                     tk = pp_lex_next_token(tk, true);
                     macro->is_variadic = true;
                     macro->variadic_tk = copy_token(tk);
-                    macro->variadic_tk->literal =
-                        intern_string("__VA_ARGS__");
+                    macro->variadic_tk->literal = intern_string("__VA_ARGS__");
                 }
 
                 tk = pp_lex_expect_token(tk, T_close_bracket, true);
